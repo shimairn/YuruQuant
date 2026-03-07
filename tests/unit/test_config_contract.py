@@ -17,6 +17,7 @@ class ConfigContractTest(unittest.TestCase):
         self.assertEqual(config.portfolio.risk_per_trade_ratio, 0.015)
         self.assertEqual(config.strategy.entry.breakout_atr_buffer, 0.30)
         self.assertEqual(config.strategy.entry.session_end_buffer_bars, 0)
+        self.assertEqual(config.strategy.entry.entry_block_major_gap_bars, 0)
         self.assertFalse(hasattr(config.strategy.entry, 'breakout_close_position_min'))
         self.assertEqual(config.strategy.exit.protected_activate_r, 1.2)
         self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
@@ -67,6 +68,7 @@ observability:
         self.assertEqual(config.strategy.entry.donchian_lookback, 36)
         self.assertEqual(config.strategy.entry.breakout_atr_buffer, 0.30)
         self.assertEqual(config.strategy.entry.session_end_buffer_bars, 0)
+        self.assertEqual(config.strategy.entry.entry_block_major_gap_bars, 0)
         self.assertFalse(hasattr(config.strategy.entry, 'breakout_close_position_min'))
         self.assertEqual(config.strategy.exit.protected_activate_r, 1.2)
         self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
@@ -206,6 +208,43 @@ observability:
             with self.assertRaises(ValueError):
                 load_config(path)
 
+    def test_reject_negative_entry_block_major_gap_bars(self):
+        text = """
+runtime:
+  mode: BACKTEST
+  run_id: demo
+broker:
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    backtest:
+      start: "2025-01-01 00:00:00"
+      end: "2025-01-31 15:00:00"
+universe:
+  symbols: [DCE.P]
+strategy:
+  environment: {}
+  entry:
+    entry_block_major_gap_bars: -1
+  exit: {}
+portfolio:
+  max_daily_loss_ratio: 0.05
+  max_drawdown_halt_ratio: 0.15
+execution:
+  backtest_commission_ratio: 0.001
+  backtest_slippage_ratio: 0.002
+reporting:
+  enabled: true
+observability:
+  level: WARN
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / 'bad_major_gap_entry.yaml'
+            path.write_text(text, encoding='utf-8')
+            with self.assertRaises(ValueError):
+                load_config(path)
+
     def test_reject_negative_armed_flush_fields(self):
         template = """
 runtime:
@@ -249,4 +288,3 @@ observability:
 
 if __name__ == '__main__':
     unittest.main()
-

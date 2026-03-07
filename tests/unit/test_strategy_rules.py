@@ -161,6 +161,19 @@ class StrategyRulesTest(unittest.TestCase):
         signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
         self.assertIsNone(signal)
 
+    def test_major_gap_entry_blocker_blocks_last_bar_before_large_break(self):
+        self.config.strategy.entry.entry_block_major_gap_bars = 1
+        frame = build_breakout_frame(up=True, end_eob=datetime(2026, 1, 5, 14, 55, 0))
+        signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
+        self.assertIsNone(signal)
+
+    def test_major_gap_entry_blocker_does_not_block_short_break(self):
+        self.config.strategy.entry.entry_block_major_gap_bars = 1
+        frame = build_breakout_frame(up=True, end_eob=datetime(2026, 1, 5, 11, 25, 0))
+        signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
+        self.assertIsNotNone(signal)
+        self.assertEqual('buy', signal.action)
+
     def test_weak_close_position_breakout_is_now_allowed(self):
         frame = build_breakout_frame(up=True, latest_close=101.25, latest_high=102.05, latest_low=101.05)
         signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
@@ -261,3 +274,4 @@ class StrategyRulesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

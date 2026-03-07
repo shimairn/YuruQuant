@@ -6,7 +6,7 @@ from yuruquant.core.indicators import latest_atr, latest_donchian_channel
 from yuruquant.core.models import EntrySignal, EnvironmentSnapshot, InstrumentSpec, PortfolioRuntime
 from yuruquant.core.time import make_event_id
 from yuruquant.strategy.trend_breakout.risk_model import resolve_order_qty
-from yuruquant.strategy.trend_breakout.session_windows import blocked_by_session_end, is_in_session
+from yuruquant.strategy.trend_breakout.session_windows import blocked_by_session_end, is_in_session, major_session_end_approaching
 
 
 ATR_PERIOD = 14
@@ -75,6 +75,14 @@ def maybe_generate_entry(
     if not is_in_session(spec, current_eob):
         return None
     if blocked_by_session_end(spec, current_eob, config.universe.entry_frequency, config.strategy.entry.session_end_buffer_bars):
+        return None
+    if major_session_end_approaching(
+        spec=spec,
+        eob=current_eob,
+        frequency=config.universe.entry_frequency,
+        buffer_bars=config.strategy.entry.entry_block_major_gap_bars,
+        min_gap_minutes=config.strategy.exit.armed_flush_min_gap_minutes,
+    ):
         return None
     atr_value = latest_atr(frame_5m, ATR_PERIOD)
     if atr_value <= 0:

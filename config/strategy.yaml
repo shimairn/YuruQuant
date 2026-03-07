@@ -46,6 +46,8 @@ strategy:
     donchian_lookback: 36
     min_channel_width_atr: 0.5
     breakout_atr_buffer: 0.30
+    session_end_buffer_bars: 0
+    entry_block_major_gap_bars: 0
   exit:
     hard_stop_atr: 2.2
     protected_activate_r: 1.2
@@ -62,5 +64,3 @@ execution:
   fill_policy: next_bar_open
   backtest_commission_ratio: 0.0010
   backtest_slippage_ratio: 0.0020
-
-

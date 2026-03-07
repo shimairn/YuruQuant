@@ -71,6 +71,7 @@ class EntryConfig:
     min_channel_width_atr: float
     breakout_atr_buffer: float
     session_end_buffer_bars: int
+    entry_block_major_gap_bars: int
 
 
 @dataclass
@@ -178,6 +179,7 @@ DEFAULTS: dict[str, Any] = {
             'min_channel_width_atr': 0.5,
             'breakout_atr_buffer': 0.30,
             'session_end_buffer_bars': 0,
+            'entry_block_major_gap_bars': 0,
         },
         'exit': {
             'hard_stop_atr': 2.2,
@@ -218,7 +220,7 @@ INSTRUMENT_KEYS = {'multiplier', 'min_tick', 'min_lot', 'lot_step', 'sessions'}
 SESSIONS_KEYS = {'day', 'night'}
 STRATEGY_KEYS = {'environment', 'entry', 'exit'}
 ENVIRONMENT_KEYS = {'ma_period', 'macd_fast', 'macd_slow', 'macd_signal'}
-ENTRY_KEYS = {'donchian_lookback', 'min_channel_width_atr', 'breakout_atr_buffer', 'session_end_buffer_bars'}
+ENTRY_KEYS = {'donchian_lookback', 'min_channel_width_atr', 'breakout_atr_buffer', 'session_end_buffer_bars', 'entry_block_major_gap_bars'}
 EXIT_KEYS = {'hard_stop_atr', 'protected_activate_r', 'ascended_activate_r', 'armed_flush_buffer_bars', 'armed_flush_min_gap_minutes'}
 PORTFOLIO_KEYS = {'risk_per_trade_ratio', 'max_daily_loss_ratio', 'max_drawdown_halt_ratio'}
 EXECUTION_KEYS = {'fill_policy', 'backtest_commission_ratio', 'backtest_slippage_ratio'}
@@ -372,6 +374,8 @@ def load_config(path: str | Path) -> AppConfig:
         raise ValueError('strategy.entry.breakout_atr_buffer must be >= 0')
     if int(entry['session_end_buffer_bars']) < 0:
         raise ValueError('strategy.entry.session_end_buffer_bars must be >= 0')
+    if int(entry['entry_block_major_gap_bars']) < 0:
+        raise ValueError('strategy.entry.entry_block_major_gap_bars must be >= 0')
 
     if float(exit_cfg['hard_stop_atr']) <= 0:
         raise ValueError('strategy.exit.hard_stop_atr must be > 0')
@@ -431,6 +435,7 @@ def load_config(path: str | Path) -> AppConfig:
                 min_channel_width_atr=max(float(entry['min_channel_width_atr']), 0.0),
                 breakout_atr_buffer=max(float(entry['breakout_atr_buffer']), 0.0),
                 session_end_buffer_bars=max(int(entry['session_end_buffer_bars']), 0),
+                entry_block_major_gap_bars=max(int(entry['entry_block_major_gap_bars']), 0),
             ),
             exit=ExitConfig(
                 hard_stop_atr=max(float(exit_cfg['hard_stop_atr']), 0.01),
@@ -462,6 +467,7 @@ def load_config(path: str | Path) -> AppConfig:
             sample_every_n=max(int(observability['sample_every_n']), 1),
         ),
     )
+
 
 
 
