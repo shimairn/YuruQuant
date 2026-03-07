@@ -1,21 +1,52 @@
-# Python cache
+# Python cache / bytecode
 __pycache__/
 *.py[cod]
+*$py.class
 
 # Virtual envs
 .venv/
 venv/
+env/
+ENV/
 
-# Runtime cache
+# Build / packaging
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Test / type / lint cache
 .pytest_cache/
 .mypy_cache/
-gmcache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Runtime outputs
+# Runtime data / outputs
+gmcache/
 reports/
 data/
+logs/
+*.log
 
-# OS/editor
+# Notebook
+.ipynb_checkpoints/
+
+# Secrets / local env
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-.vscode/
+*.swp
+
+# Local AI assistant metadata
+.claude/

@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -m compileall \"C:/Users/wuktt/Application/量化\")"
-    ]
-  }
-}
