@@ -1,13 +1,16 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+from dataclasses import replace
 
 from yuruquant.app.config import AppConfig
+from yuruquant.core.execution_diagnostics import build_execution_diagnostics
 from yuruquant.core.fill_policy import NextBarOpenFillPolicy
 from yuruquant.core.frames import SymbolFrames
-from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, ReportSink, RuntimeState, Signal, SymbolRuntime
+from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, PortfolioSnapshot, ReportSink, RuntimeState, Signal, SymbolRuntime
 from yuruquant.core.time import is_after, to_trade_day
 from yuruquant.portfolio.risk import evaluate_portfolio_guard
 from yuruquant.reporting.logging import debug, warn
-from yuruquant.strategy.trend_breakout import build_managed_position, compute_environment, evaluate_exit_signal, make_flatten_signal, maybe_generate_entry
+from yuruquant.strategy.trend_breakout import build_managed_position, compute_environment, compute_exit_pnl, evaluate_exit_signal, make_flatten_signal, maybe_generate_entry
 
 
 class StrategyEngine:
@@ -60,7 +63,7 @@ class StrategyEngine:
     def _accepted(self, signal: Signal, results: list[object]) -> bool:
         if not results:
             return False
-        accepted_values = [bool(getattr(item, "accepted", False)) for item in results]
+        accepted_values = [bool(getattr(item, 'accepted', False)) for item in results]
         if isinstance(signal, EntrySignal):
             return any(accepted_values)
         return all(accepted_values)
@@ -74,31 +77,77 @@ class StrategyEngine:
         else:
             portfolio.losses += 1
 
+    def _estimate_fill(self, symbol: str, signal: Signal) -> tuple[object, float]:
+        frames = self.runtime.bar_store.get(symbol)
+        if isinstance(frames, SymbolFrames) and not frames.entry.frame.empty_frame:
+            fill_ts = frames.entry.frame.latest_open_time() or signal.created_at
+            fill_price = frames.entry.frame.latest_open() or float(signal.price)
+            return fill_ts, float(fill_price)
+        return signal.created_at, float(signal.price)
+
+    def _modeled_portfolio_snapshot(self, fallback_cash: float) -> PortfolioSnapshot:
+        portfolio = self.runtime.portfolio
+        equity = float(portfolio.initial_equity or fallback_cash or 0.0) + float(portfolio.realized_pnl)
+        cost_ratio = self.config.execution.backtest_commission_ratio + self.config.execution.backtest_slippage_ratio
+        for state in self.runtime.states_by_csymbol.values():
+            position = state.position
+            if position is None or not state.main_symbol:
+                continue
+            frames = self.runtime.bar_store.get(state.main_symbol)
+            current_price = position.entry_price
+            if isinstance(frames, SymbolFrames) and not frames.entry.frame.empty_frame:
+                current_price = frames.entry.frame.latest_close() or position.entry_price
+            spec = self.config.universe.instrument_overrides.get(state.csymbol, self.config.universe.instrument_defaults)
+            _, net = compute_exit_pnl(position, current_price, spec.multiplier, cost_ratio)
+            equity += net
+        return PortfolioSnapshot(equity=equity, cash=equity)
+
     def _execute_due_signal(self, state: SymbolRuntime, csymbol: str, symbol: str, signal: Signal) -> None:
+        fill_ts, fill_price = self._estimate_fill(symbol, signal)
+        spec = self.config.universe.instrument_overrides.get(csymbol, self.config.universe.instrument_defaults)
+        diagnostics = build_execution_diagnostics(signal, fill_ts, fill_price, spec, position=state.position)
         intents = self.gateway.plan_order_intents(symbol, signal)
         results = self.gateway.submit_order_intents(intents)
         if self.config.reporting.enabled:
-            self.report_sink.record_executions(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, csymbol, symbol, signal.created_at, results)
+            self.report_sink.record_executions(
+                self.runtime,
+                self.config.runtime.mode,
+                self.config.runtime.run_id,
+                csymbol,
+                symbol,
+                signal,
+                fill_ts,
+                fill_price,
+                diagnostics,
+                results,
+            )
         if not self._accepted(signal, results):
             if isinstance(signal, ExitSignal):
-                warn("execution.close_rejected", csymbol=csymbol, symbol=symbol, action=signal.action)
+                warn('execution.close_rejected', csymbol=csymbol, symbol=symbol, action=signal.action)
             return
 
         if isinstance(signal, EntrySignal):
-            state.position = build_managed_position(signal)
+            state.position = build_managed_position(signal, fill_price=fill_price, fill_ts=fill_ts)
             return
 
-        self._update_trade_stats(signal)
+        actual_signal = signal
+        if state.position is not None:
+            cost_ratio = self.config.execution.backtest_commission_ratio + self.config.execution.backtest_slippage_ratio
+            gross, net = compute_exit_pnl(state.position, fill_price, spec.multiplier, cost_ratio)
+            actual_signal = replace(signal, gross_pnl=gross, net_pnl=net)
+        self._update_trade_stats(actual_signal)
         state.position = None
 
     def _process_symbol(self, state: SymbolRuntime) -> None:
         symbol = state.main_symbol
         if not symbol:
             return
+
         self._backfill_if_needed(symbol)
         frames = self._ensure_frames(symbol)
         if len(frames.entry) < self.config.universe.warmup.entry_bars or len(frames.trend) < self.config.universe.warmup.trend_bars:
             return
+
         current_eob = frames.entry.frame.latest_eob()
         if current_eob is None:
             return
@@ -121,6 +170,8 @@ class StrategyEngine:
         )
 
         portfolio_snapshot = self.gateway.get_portfolio_snapshot()
+        if str(self.config.runtime.mode).upper() == 'BACKTEST':
+            portfolio_snapshot = self._modeled_portfolio_snapshot(self.config.broker.gm.backtest.initial_cash)
         guard = evaluate_portfolio_guard(
             state=self.runtime.portfolio,
             snapshot=portfolio_snapshot,
@@ -134,7 +185,7 @@ class StrategyEngine:
         cost_ratio = self.config.execution.backtest_commission_ratio + self.config.execution.backtest_slippage_ratio
 
         if guard.force_flatten and state.position is not None and state.pending_signal is None:
-            signal = make_flatten_signal(state.position, current_price, current_eob, spec.multiplier, cost_ratio, f"portfolio halt: {guard.reason}")
+            signal = make_flatten_signal(state.position, current_price, current_eob, spec.multiplier, cost_ratio, f'portfolio halt: {guard.reason}')
             self._queue_signal(state, state.csymbol, symbol, signal)
             return
 
@@ -143,7 +194,9 @@ class StrategyEngine:
                 config=self.config,
                 position=state.position,
                 frame_5m=frames.entry.frame,
+                environment=state.environment,
                 current_eob=current_eob,
+                spec=spec,
                 multiplier=spec.multiplier,
                 cost_ratio=cost_ratio,
             )
@@ -163,16 +216,16 @@ class StrategyEngine:
                 self._queue_signal(state, state.csymbol, symbol, signal)
 
         if self.config.reporting.enabled:
-            self.report_sink.record_portfolio_day(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, to_trade_day(current_eob))
+            self.report_sink.record_portfolio_day(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, to_trade_day(current_eob), current_eob)
 
         if state.bar_index_5m % 100 == 0:
             debug(
-                "engine.heartbeat",
+                'engine.heartbeat',
                 csymbol=state.csymbol,
                 symbol=symbol,
                 bar_index_5m=state.bar_index_5m,
                 direction=state.environment.direction,
-                macd_histogram=f"{state.environment.macd_histogram:.4f}",
+                macd_histogram=f'{state.environment.macd_histogram:.4f}',
             )
 
     def on_market_event(self, event) -> None:
@@ -184,18 +237,19 @@ class StrategyEngine:
                 continue
             frames = self._ensure_frames(bar.symbol)
             payload = [{
-                "eob": bar.eob,
-                "open": bar.open,
-                "high": bar.high,
-                "low": bar.low,
-                "close": bar.close,
-                "volume": bar.volume,
+                'eob': bar.eob,
+                'open': bar.open,
+                'high': bar.high,
+                'low': bar.low,
+                'close': bar.close,
+                'volume': bar.volume,
             }]
-            if bar.frequency == "5m":
+            if bar.frequency == '5m':
                 frames.entry.append(payload)
                 triggered_symbols.add(bar.symbol)
-            elif bar.frequency == "1h":
+            elif bar.frequency == '1h':
                 frames.trend.append(payload)
+
         for symbol in sorted(triggered_symbols):
             csymbol = self.runtime.symbol_to_csymbol.get(symbol)
             if not csymbol:
@@ -204,3 +258,8 @@ class StrategyEngine:
             if state is None:
                 continue
             self._process_symbol(state)
+
+
+
+
+

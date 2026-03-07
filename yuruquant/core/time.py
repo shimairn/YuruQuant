@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def parse_datetime(value: object) -> datetime:
@@ -44,3 +44,19 @@ def normalize_frequency(value: object) -> str:
         "3600s": "1h",
     }
     return aliases.get(raw, raw)
+
+
+def frequency_to_timedelta(value: object) -> timedelta | None:
+    normalized = normalize_frequency(value)
+    if normalized == '5m':
+        return timedelta(minutes=5)
+    if normalized == '1h':
+        return timedelta(hours=1)
+    if normalized.endswith('s') and normalized[:-1].isdigit():
+        return timedelta(seconds=int(normalized[:-1]))
+    if normalized.endswith('m') and normalized[:-1].isdigit():
+        return timedelta(minutes=int(normalized[:-1]))
+    if normalized.endswith('h') and normalized[:-1].isdigit():
+        return timedelta(hours=int(normalized[:-1]))
+    return None
+

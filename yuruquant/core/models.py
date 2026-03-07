@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 
-Action = Literal["buy", "sell", "close_long", "close_short"]
-Phase = Literal["armed", "protected", "trend_ride"]
+Action = Literal['buy', 'sell', 'close_long', 'close_short']
+Phase = Literal['armed', 'protected', 'ascended']
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ Signal = EntrySignal | ExitSignal
 @dataclass(frozen=True)
 class OrderIntent:
     symbol: str
-    side: Literal["long", "short"]
+    side: Literal['long', 'short']
     target_qty: int
     purpose: str
 
@@ -100,6 +100,13 @@ class ExecutionResult:
     accepted: bool
     reason: str
     timestamp: str
+
+
+@dataclass(frozen=True)
+class ExecutionDiagnostics:
+    execution_regime: str = 'normal'
+    fill_gap_points: float = 0.0
+    fill_gap_atr: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -137,7 +144,7 @@ class ManagedPosition:
 @dataclass
 class SymbolRuntime:
     csymbol: str
-    main_symbol: str = ""
+    main_symbol: str = ''
     environment: EnvironmentSnapshot = field(default_factory=EnvironmentSnapshot)
     pending_signal: Signal | None = None
     pending_signal_eob: object | None = None
@@ -152,12 +159,12 @@ class PortfolioRuntime:
     current_equity: float = 0.0
     equity_peak: float = 0.0
     daily_start_equity: float = 0.0
-    current_date: str = ""
+    current_date: str = ''
     drawdown_ratio: float = 0.0
-    risk_state: str = "normal"
+    risk_state: str = 'normal'
     effective_risk_mult: float = 1.0
     halt_flag: bool = False
-    halt_reason: str = ""
+    halt_reason: str = ''
     trades_count: int = 0
     wins: int = 0
     losses: int = 0
@@ -178,7 +185,6 @@ class RuntimeState:
     bar_store: dict[str, object] = field(default_factory=dict)
     portfolio: PortfolioRuntime = field(default_factory=PortfolioRuntime)
     reports: ReportPaths = field(default_factory=ReportPaths)
-    last_portfolio_report_date: str = ""
     context: object | None = None
 
 
@@ -186,7 +192,7 @@ class RuntimeState:
 class GuardDecision:
     allow_entries: bool
     force_flatten: bool
-    reason: str = ""
+    reason: str = ''
 
 
 @runtime_checkable
@@ -221,6 +227,22 @@ class ReportSink(Protocol):
 
     def record_signal(self, runtime: RuntimeState, mode: str, run_id: str, csymbol: str, symbol: str, signal: Signal) -> None: ...
 
-    def record_executions(self, runtime: RuntimeState, mode: str, run_id: str, csymbol: str, symbol: str, created_at: object, results: list[ExecutionResult]) -> None: ...
+    def record_executions(
+        self,
+        runtime: RuntimeState,
+        mode: str,
+        run_id: str,
+        csymbol: str,
+        symbol: str,
+        signal: Signal,
+        fill_ts: object,
+        fill_price: float,
+        diagnostics: ExecutionDiagnostics,
+        results: list[ExecutionResult],
+    ) -> None: ...
 
-    def record_portfolio_day(self, runtime: RuntimeState, mode: str, run_id: str, trade_day: str) -> None: ...
+    def record_portfolio_day(self, runtime: RuntimeState, mode: str, run_id: str, trade_day: str, snapshot_ts: object) -> None: ...
+
+
+
+

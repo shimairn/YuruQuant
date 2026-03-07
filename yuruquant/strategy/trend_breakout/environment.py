@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from yuruquant.core.frames import KlineFrame
 from yuruquant.core.indicators import latest_macd_histogram, latest_sma

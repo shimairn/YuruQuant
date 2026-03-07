@@ -1,4 +1,4 @@
-﻿runtime:
+runtime:
   run_id: smoke_dual_core_2x3m
 
 broker:
@@ -37,13 +37,13 @@ strategy:
   entry:
     donchian_lookback: 36
     min_channel_width_atr: 0.5
-    breakout_atr_buffer: 0.25
-    breakout_close_position_min: 0.70
+    breakout_atr_buffer: 0.30
   exit:
     hard_stop_atr: 2.2
-    protected_activate_r: 1.5
-    trend_ride_activate_r: 2.5
-    trailing_ma_period: 60
+    protected_activate_r: 1.2
+    ascended_activate_r: 2.5
+    armed_flush_buffer_bars: 0
+    armed_flush_min_gap_minutes: 180
 
 portfolio:
   risk_per_trade_ratio: 0.015
@@ -57,3 +57,5 @@ execution:
 
 reporting:
   output_dir: reports/smoke_dual_core_2x3m
+
+
