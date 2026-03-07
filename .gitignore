@@ -1,0 +1,20 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual envs
+.venv/
+venv/
+
+# Test/cache artifacts
+.pytest_cache/
+.mypy_cache/
+
+# Quant research outputs
+reports/
+data/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
