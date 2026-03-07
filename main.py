@@ -3,12 +3,15 @@
 import argparse
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from strategy.config_loader import load_config
-from strategy.gm.callbacks import build_gm_callbacks
-from strategy.engine import StrategyEngine
+from strategy.config import load_config
+from strategy.adapters.gm.callbacks import build_gm_callbacks
+from strategy.core.engine import StrategyEngine
+from strategy.observability.log import configure as configure_log
+from strategy.observability.log import info, warn
 
 
 _GM_CALLBACKS = None
@@ -18,36 +21,19 @@ def _normalize_mode(value: str | None) -> str | None:
     if value is None:
         return None
     raw = str(value).strip().upper()
-    numeric_mapping = {
-        "1": "BACKTEST",
-        "2": "LIVE",
-    }
-    try:
-        from gm.api import MODE_BACKTEST, MODE_LIVE  # type: ignore
-
-        numeric_mapping = {
-            str(int(MODE_BACKTEST)): "BACKTEST",
-            str(int(MODE_LIVE)): "LIVE",
-        }
-    except Exception:
-        pass
     mapping = {
-        **numeric_mapping,
         "BACKTEST": "BACKTEST",
         "LIVE": "LIVE",
-        "BT": "BACKTEST",
-        "LV": "LIVE",
     }
     return mapping.get(raw)
 
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--mode", default=None, help="BACKTEST/LIVE or legacy 1/2")
+    p.add_argument("--mode", default=None, help="BACKTEST or LIVE")
     p.add_argument("--config", default="config/strategy.yaml")
     p.add_argument("--run-id", default=None, help="Override run_id (default: auto-timestamped)")
-    # GM launcher may inject extra args.
-    # Keep these optional; prefer env vars / config to avoid leaking credentials in code.
+    # Keep optional GM launcher args for SDK callback startup compatibility.
     p.add_argument("--strategy_id", default=None)
     p.add_argument("--token", default=None)
     p.add_argument("--serv_addr", default=None)
@@ -55,28 +41,26 @@ def _parse_args() -> argparse.Namespace:
 
     normalized = _normalize_mode(args.mode)
     if args.mode is not None and normalized is None:
-        p.error(f"argument --mode: invalid value '{args.mode}' (use BACKTEST/LIVE or 1/2)")
+        p.error(f"argument --mode: invalid value '{args.mode}' (use BACKTEST/LIVE)")
     args.mode = normalized
     return args
 
 
 def _append_run_id_timestamp_if_needed(runtime) -> None:
-    """如果run_id没有时间戳后缀，自动追加（确保每次运行报告独立）"""
+    """Append a timestamp suffix when run_id is not already timestamped."""
     current = getattr(runtime, "run_id", "run_001")
     if not current:
         current = "run_001"
 
-    # 检测是否已包含时间戳格式 (run_001_20250214_153022)
     if re.search(r"_\d{8}_\d{6}$", current):
         return
 
-    # 追加时间戳
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = str(current).strip().rstrip("_")
     if not base:
         base = "run_001"
     runtime.run_id = f"{base}_{ts}"
-    print(f"run_id auto-timestamped: {runtime.run_id}")
+    info("runtime.run_id_timestamped", run_id=runtime.run_id)
 
 
 def _safe_parse_args() -> argparse.Namespace:
@@ -84,6 +68,8 @@ def _safe_parse_args() -> argparse.Namespace:
     try:
         return _parse_args()
     except SystemExit:
+        if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
+            raise
         return argparse.Namespace(
             mode=None,
             config=os.getenv("STRATEGY_CONFIG", "config/strategy.yaml"),
@@ -115,11 +101,16 @@ def _apply_overrides(cfg, args: argparse.Namespace) -> None:
     if not cfg.runtime.mode:
         cfg.runtime.mode = os.getenv("GM_MODE", "BACKTEST").strip().upper() or "BACKTEST"
 
-    # 处理 --run-id 参数：用户指定则直接使用，否则自动追加时间戳
     if hasattr(args, "run_id") and args.run_id is not None:
         cfg.runtime.run_id = str(args.run_id).strip()
     else:
         _append_run_id_timestamp_if_needed(cfg.runtime)
+
+
+def _init_logging(cfg) -> None:
+    level = getattr(getattr(cfg, "observability", None), "level", "WARN")
+    sample_every_n = getattr(getattr(cfg, "observability", None), "sample_every_n", 50)
+    configure_log(level=level, sample_every_n=sample_every_n)
 
 
 def _ensure_callbacks_initialized() -> None:
@@ -131,6 +122,7 @@ def _ensure_callbacks_initialized() -> None:
     cfg_path = Path(getattr(args, "config", None) or os.getenv("STRATEGY_CONFIG", "config/strategy.yaml"))
     cfg = load_config(cfg_path)
     _apply_overrides(cfg, args)
+    _init_logging(cfg)
 
     engine = StrategyEngine(cfg)
     _GM_CALLBACKS = build_gm_callbacks(engine)
@@ -169,17 +161,30 @@ def main() -> int:
     args = _safe_parse_args()
     cfg = load_config(Path(args.config))
 
-    # Keep config path for callback-only startup process.
     os.environ["STRATEGY_CONFIG"] = str(Path(args.config))
     _apply_overrides(cfg, args)
+    _init_logging(cfg)
 
     engine = StrategyEngine(cfg)
     callbacks = build_gm_callbacks(engine)
     _GM_CALLBACKS = callbacks
 
-    callbacks.run_gm()
+    info(
+        "runtime.startup",
+        mode=cfg.runtime.mode,
+        run_id=cfg.runtime.run_id,
+        symbols=len(cfg.runtime.symbols),
+        warmup_5m=cfg.runtime.warmup_5m,
+        warmup_1h=cfg.runtime.warmup_1h,
+    )
+    try:
+        callbacks.run_gm()
+    except Exception:
+        warn("runtime.run_failed", mode=cfg.runtime.mode, run_id=cfg.runtime.run_id)
+        raise
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

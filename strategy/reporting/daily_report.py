@@ -4,7 +4,7 @@ import csv
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
+from strategy.core.time_utils import to_trade_day
 
 
 DAILY_REPORT_HEADER = [
@@ -22,6 +22,7 @@ DAILY_REPORT_HEADER = [
     "losses",
     "realized_pnl",
     "halt_flag",
+    "halt_reason",
     "notes",
 ]
 
@@ -44,8 +45,7 @@ def _write_header(path: Path) -> None:
 def _backup_existing_report(path: Path) -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_name = f"{path.stem}.bak_{stamp}{path.suffix}"
-    backup_path = path.with_name(backup_name)
-    path.replace(backup_path)
+    path.replace(path.with_name(backup_name))
 
 
 def ensure_daily_report(runtime) -> None:
@@ -67,12 +67,13 @@ def ensure_daily_report(runtime) -> None:
 
 def append_daily_report(runtime, current_eob: object) -> None:
     ensure_daily_report(runtime)
-    trade_day = pd.to_datetime(current_eob).strftime("%Y-%m-%d")
+    trade_day = to_trade_day(current_eob)
     if runtime.last_daily_report_date == trade_day:
         return
 
     p = runtime.portfolio_risk
     equity_end = p.current_equity if p.current_equity > 0 else (p.initial_equity if p.initial_equity > 0 else p.daily_start_equity)
+
     with runtime.daily_report_path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(
@@ -90,8 +91,10 @@ def append_daily_report(runtime, current_eob: object) -> None:
                 int(p.wins),
                 int(p.losses),
                 f"{float(p.realized_pnl):.6f}",
-                int(bool(p.risk_state.startswith('halt'))),
+                int(bool(p.halt_flag)),
+                p.halt_reason,
                 p.notes,
             ]
         )
+
     runtime.last_daily_report_date = trade_day

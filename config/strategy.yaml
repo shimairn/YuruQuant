@@ -1,4 +1,4 @@
-runtime:
+﻿runtime:
   mode: BACKTEST
   run_id: run_001
   symbols:
@@ -7,78 +7,68 @@ runtime:
     - SHFE.ag
     - DCE.p
     - SHFE.rb
-    - DCE.m   # 豆粕
-    - DCE.y   # 豆油
-    - CZCE.MA # 甲酸
-    - SHFE.cu # 铜
-    - SHFE.ni # 镍
-    - SHFE.zn # 锌
-    - SHFE.au # 衰（备用）
-    - CZCE.sa # 白糁
-    - CZCE.ur # 尿素
-    - CZCE.rm # 菜粕
+    - DCE.m
+    - DCE.y
+    - CZCE.MA
+    - SHFE.cu
+    - SHFE.ni
+    - SHFE.zn
+    - SHFE.au
+    - CZCE.sa
+    - CZCE.ur
+    - CZCE.rm
   freq_5m: 300s
   freq_1h: 3600s
-  sub_count_5m: 40
-  sub_count_1h: 30
+  warmup_5m: 180
+  warmup_1h: 120
 
 strategy:
-  min_tick: 1.0
-  atr_period: 14
-  fractal_confirm_bars: 2
-  atr_multiplier: 1.2
-  min_move_pct: 0.002
-  require_next_bar_confirm: false
-  min_platform_width_ratio: 0.0018
-  min_platform_width_atr: 0.35
-  breakout_min_distance_atr: 0.03
-  breakout_volume_ratio_min: 1.25
-  day_volume_ratio_min: 1.00
-  night_volume_ratio_min: 1.00
-  h1_filter_mode: soft
-  h1_neutral_size_mult: 0.5
+  breakout_lookback_5m: 36
+  breakout_min_distance_atr: 0.08
+  breakout_width_min_atr: 0.40
+  breakout_width_max_atr: 4.00
+  volume_ratio_day_min: 1.20
+  volume_ratio_night_min: 1.05
+  trend_ema_fast_1h: 20
+  trend_ema_slow_1h: 60
+  trend_strength_min: 0.15
   entry_cooldown_bars: 2
-  max_entries_per_day: 15
+  max_entries_per_day: 12
   target_annual_vol: 0.10
-  atr_pause_ratio: 0.0
-  atr_pause_lookback: 50
-  h1_ema_fast_period: 20
-  h1_ema_slow_period: 60
-  h1_rsi_period: 14
-  h1_rsi_threshold: 50.0
-  max_platform_width_atr: 4.0
+  atr_period: 14
 
 risk:
-  risk_per_trade: 0.020
-  hard_stop_atr: 2.2
-  first_target_ratio: 2.0
-  trail_activate_r: 1.0
-  trail_stop_atr: 2.4
-  enable_dynamic_stop: true
-  dynamic_stop_atr: 1.4
-  dynamic_stop_activate_r: 0.5
+  risk_per_trade_notional_ratio: 0.020
+  fixed_equity_percent: 0.12
+  max_pos_size_percent: 0.30
+  hard_stop_atr: 2.20
+  break_even_activate_r: 1.00
+  trail_activate_r: 1.00
+  trail_stop_atr: 2.40
+  dynamic_stop_enabled: true
+  dynamic_stop_atr: 1.40
+  dynamic_stop_activate_r: 0.50
   time_stop_bars: 8
   max_stopouts_per_day_per_symbol: 2
   backtest_commission_ratio: 0.0010
   backtest_slippage_ratio: 0.0020
-  fixed_equity_percent: 0.12
-  max_pos_size_percent: 0.30
 
 portfolio:
   max_daily_loss_ratio: 0.05
-  dd_state_1: 0.08
-  dd_state_2: 0.12
-  dd_state_3: 0.15
-  dd_risk_mult_1: 0.75
-  dd_risk_mult_2: 0.50
-  dd_risk_mult_3: 0.25
+  max_drawdown_halt_ratio: 0.15
 
 gm:
-  token: "56b8acdeeb9deff2bdd44658b5bbde24bbc35a9d"
-  strategy_id: "de55f9c3-07ea-11f1-927b-d4f32d1fa8a7"
+  token: ""
+  strategy_id: ""
+  serv_addr: ""
   backtest_start: "2025-08-20 00:00:00"
   backtest_end: "2026-02-13 15:00:00"
   backtest_max_days: 180
+  backtest_initial_cash: 500000
+  backtest_match_mode: 0
+  backtest_intraday: false
+  subscribe_wait_group: true
+  wait_group_timeout: 10
 
 instrument:
   defaults:
@@ -97,25 +87,15 @@ instrument:
         - ["13:30", "15:00"]
       night:
         - ["21:00", "23:00"]
-  symbols:
-    CZCE.ap: {}
-    CZCE.fg: {}
-    SHFE.ag: {}
-    DCE.p: {}
-    SHFE.rb: {}
-    DCE.m: {}
-    DCE.y: {}
-    CZCE.MA: {}
-    SHFE.cu: {}
-    SHFE.ni: {}
-    SHFE.zn: {}
-    SHFE.au: {}
-    CZCE.sa: {}
-    CZCE.ur: {}
-    CZCE.rm: {}
+  symbols: {}
 
 reporting:
   enabled: true
   output_dir: reports
   trade_filename: trade_report.csv
   daily_filename: daily_report.csv
+  execution_filename: execution_report.csv
+
+observability:
+  level: WARN
+  sample_every_n: 50

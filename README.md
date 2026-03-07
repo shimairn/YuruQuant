@@ -1,32 +1,56 @@
 ﻿# YuruQuant
 
-Ride alone, trade slow, watch the sunset. A laid-back trading bot for A-Share & Futures. Sometimes we catch the trend (like catching a glimpse of Fuji). Sometimes we just sit by the fire and eat noodles. Profit is nice, but peace of mind is better.
+GM-only futures strategy runtime with a strict typed config contract and Polars-first data pipeline.
 
-## 量化策略重写版（仅保留策略思想）
+Ride alone, trade slow, watch the sunset.
 
-本项目已按“全量清空后重写”方式实现，保留以下策略核心思想：
+## Install
 
-- 1h 趋势过滤
-- 5m 严格缠论中枢突破
-- 下一根确认执行
-- 分层风控（硬止损 / 首段止盈 / 追踪止损 / 时间止损 / 组合DD）
+```powershell
+python -m pip install -r requirements.txt
+```
 
-## 运行
+## Run
 
 ```powershell
 # BACKTEST
-conda run -n minner python main.py --mode BACKTEST --config config/strategy.yaml
+python main.py --mode BACKTEST --config config/strategy.yaml
 
 # LIVE
-conda run -n minner python main.py --mode LIVE --config config/strategy.yaml
+python main.py --mode LIVE --config config/strategy.yaml
 ```
 
-当未提供 `gm.token` / `gm.strategy_id` 时，程序会自动进入本地仿真运行，确保可启动并产出报表。
+## Runtime Path
 
-## 目录
+`main.py -> adapters.gm.callbacks -> core.engine -> pipelines(entry/risk) -> adapters.gm.orders`
 
-- `main.py`：程序入口
-- `strategy/`：引擎、流水线、GM适配、报表
-- `config/strategy.yaml`：单一配置文件
-- `tests/`：烟测
-- `docs/`：中文文档套件（含 `07_项目行为准则.md`）
+## Highlights
+
+- Strict YAML contract (`strategy/config/validator.py`) with hard failure on unknown/removed fields
+- Single action set: `none|buy|sell|close_long|close_short`
+- Polars-only kline and indicator pipeline
+- Incremental symbol bar buffers (no per-bar full-history fetch)
+- Risk flow: `hard stop -> break-even -> trailing -> dynamic -> time stop`
+
+## Config
+
+Use `config/strategy.yaml` and provide credentials via:
+
+- `gm.token` / `gm.strategy_id` in YAML, or
+- `GM_TOKEN` / `GM_STRATEGY_ID` environment variables
+
+## Tests
+
+```powershell
+# unit tests
+python -m unittest discover -s tests/unit -p "test_*.py"
+
+# performance benchmark
+python tests/perf/benchmark_on_bar.py
+```
+
+## Notes
+
+- Local replay is removed (`GM_FORCE_LOCAL` is rejected).
+- `runtime.mode` must be `BACKTEST` or `LIVE`.
+- Config validation is strict and backward-incompatible by design.

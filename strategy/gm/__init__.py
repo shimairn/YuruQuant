@@ -1,1 +1,0 @@
-﻿"""GM integration layer."""

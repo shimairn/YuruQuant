@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 from datetime import datetime
@@ -17,9 +17,8 @@ TRADE_REPORT_HEADER = [
     "price",
     "signal_reason",
     "risk_stage",
-    "entry_atr",
     "stop_loss",
-    "take_profit",
+    "entry_atr",
     "est_cost",
     "gross_pnl",
     "net_pnl",
@@ -27,7 +26,7 @@ TRADE_REPORT_HEADER = [
     "holding_bars",
     "mfe_r",
     "daily_stopout_count",
-    "atr_pause_flag",
+    "trend_strength",
 ]
 
 
@@ -49,8 +48,7 @@ def _read_header(path: Path) -> list[str]:
 def _backup_existing_report(path: Path) -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_name = f"{path.stem}.bak_{stamp}{path.suffix}"
-    backup_path = path.with_name(backup_name)
-    path.replace(backup_path)
+    path.replace(path.with_name(backup_name))
 
 
 def ensure_trade_report(runtime) -> None:
@@ -87,9 +85,8 @@ def append_trade_report(runtime, csymbol: str, symbol: str, eob: object, signal)
                 f"{float(signal.price):.6f}",
                 signal.reason,
                 signal.risk_stage,
-                f"{float(signal.entry_atr):.6f}",
                 f"{float(signal.stop_loss):.6f}",
-                f"{float(signal.take_profit):.6f}",
+                f"{float(signal.entry_atr):.6f}",
                 f"{float(signal.est_cost):.6f}",
                 f"{float(signal.gross_pnl):.6f}",
                 f"{float(signal.net_pnl):.6f}",
@@ -97,6 +94,6 @@ def append_trade_report(runtime, csymbol: str, symbol: str, eob: object, signal)
                 int(getattr(signal, "holding_bars", 0)),
                 f"{float(getattr(signal, 'mfe_r', 0.0)):.6f}",
                 int(getattr(signal, "daily_stopout_count", 0)),
-                int(getattr(signal, "atr_pause_flag", 0)),
+                f"{float(getattr(signal, 'trend_strength', 0.0)):.6f}",
             ]
         )
