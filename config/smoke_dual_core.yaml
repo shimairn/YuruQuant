@@ -1,5 +1,5 @@
 ﻿runtime:
-  run_id: dual_core_run
+  run_id: smoke_dual_core_2x3m
 
 broker:
   gm:
@@ -14,27 +14,19 @@ broker:
 universe:
   symbols:
     - DCE.P
-    - DCE.M
-    - DCE.Y
-    - DCE.A
-    - DCE.C
-    - DCE.I
-    - DCE.J
-    - DCE.JM
-    - DCE.L
-    - DCE.PP
-    - CZCE.MA
-    - CZCE.TA
-    - CZCE.FG
-    - CZCE.SA
-    - CZCE.SR
-    - CZCE.CF
-    - SHFE.RB
-    - SHFE.HC
-    - SHFE.RU
-    - SHFE.BU
-  entry_frequency: 300s
-  trend_frequency: 3600s
+    - SHFE.AG
+  instrument_overrides:
+    SHFE.AG:
+      multiplier: 15.0
+      min_tick: 1.0
+      min_lot: 1
+      lot_step: 1
+      sessions:
+        day:
+          - ["09:00", "11:30"]
+          - ["13:30", "15:00"]
+        night:
+          - ["21:00", "02:30"]
 
 strategy:
   environment:
@@ -62,3 +54,6 @@ execution:
   fill_policy: next_bar_open
   backtest_commission_ratio: 0.0010
   backtest_slippage_ratio: 0.0020
+
+reporting:
+  output_dir: reports/smoke_dual_core_2x3m

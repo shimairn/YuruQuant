@@ -1,56 +1,57 @@
 ﻿# YuruQuant
 
-GM-only futures strategy runtime with a strict typed config contract and Polars-first data pipeline.
+YuruQuant is a GM-only futures trading runtime for domestic futures trend-following strategies.
+The current codebase is organized around a thin GM adapter, a pure internal engine, and a simplified dual-core trend breakout strategy.
 
-Ride alone, trade slow, watch the sunset.
+## Layout
 
-## Install
+- `main.py`: single startup entrypoint.
+- `config/strategy.yaml`: primary live/backtest config.
+- `config/smoke_dual_core.yaml`: small 2-symbol smoke backtest config.
+- `scripts/grid_search_dual_core.py`: local parameter sweep runner.
+- `yuruquant/app`: CLI parsing, config loading, dependency assembly, runtime bootstrap.
+- `yuruquant/adapters/gm`: all `gm.api` integration, contract mapping, subscriptions, order submission, callbacks.
+- `yuruquant/core`: engine loop, frames, indicators, fill policy, runtime models.
+- `yuruquant/strategy/trend_breakout`: environment filter, breakout entry, ATR risk sizing, exit state machine.
+- `yuruquant/portfolio`: portfolio-level halts and daily risk guards.
+- `yuruquant/reporting`: CSV sinks, logging, backtest result analysis.
+- `tests/unit`: isolated contract and behavior tests.
+- `tests/integration`: startup and callback smoke coverage.
 
-```powershell
-python -m pip install -r requirements.txt
-```
+## Strategy
+
+Current strategy defaults are intentionally minimal:
+
+- Environment: `1h SMA60 + MACD(12,26,9) histogram`
+- Entry: `5m Donchian(36)` breakout with minimum channel width filter
+- Breakout quality: `ATR breakout buffer` plus single-bar `close position` filter
+- Sizing: fixed `risk_per_trade_ratio` with ATR-based hard-stop distance
+- Exit state machine:
+  - `Armed`: hard stop at `2.2 ATR`
+  - `Protected`: move to breakeven plus cost compensation after `1.5R`
+  - `TrendRide`: exit on `5m SMA60` break after `2.5R`
+- Execution: `next_bar_open`
+- Portfolio protection: daily loss halt and drawdown halt
 
 ## Run
 
-```powershell
-# BACKTEST
-python main.py --mode BACKTEST --config config/strategy.yaml
-
-# LIVE
-python main.py --mode LIVE --config config/strategy.yaml
-```
-
-## Runtime Path
-
-`main.py -> adapters.gm.callbacks -> core.engine -> pipelines(entry/risk) -> adapters.gm.orders`
-
-## Highlights
-
-- Strict YAML contract (`strategy/config/validator.py`) with hard failure on unknown/removed fields
-- Single action set: `none|buy|sell|close_long|close_short`
-- Polars-only kline and indicator pipeline
-- Incremental symbol bar buffers (no per-bar full-history fetch)
-- Risk flow: `hard stop -> break-even -> trailing -> dynamic -> time stop`
-
-## Config
-
-Use `config/strategy.yaml` and provide credentials via:
-
-- `gm.token` / `gm.strategy_id` in YAML, or
-- `GM_TOKEN` / `GM_STRATEGY_ID` environment variables
-
-## Tests
+Use the local `minner` environment directly on this machine:
 
 ```powershell
-# unit tests
-python -m unittest discover -s tests/unit -p "test_*.py"
-
-# performance benchmark
-python tests/perf/benchmark_on_bar.py
+C:\Users\wuktt\miniconda3\envs\minner\python.exe main.py --mode BACKTEST --config config\strategy.yaml
+C:\Users\wuktt\miniconda3\envs\minner\python.exe main.py --mode LIVE --config config\strategy.yaml
 ```
 
-## Notes
+## Grid Search
 
-- Local replay is removed (`GM_FORCE_LOCAL` is rejected).
-- `runtime.mode` must be `BACKTEST` or `LIVE`.
-- Config validation is strict and backward-incompatible by design.
+```powershell
+C:\Users\wuktt\miniconda3\envs\minner\python.exe scripts\grid_search_dual_core.py --force
+```
+
+Summary output is written to `reports/grid_dual_core_2x3m/summary.csv`.
+
+## Test
+
+```powershell
+C:\Users\wuktt\miniconda3\envs\minner\python.exe -m unittest discover -s tests -p "test_*.py" -v
+```

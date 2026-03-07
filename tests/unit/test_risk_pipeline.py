@@ -1,67 +1,26 @@
 ﻿from __future__ import annotations
 
-import unittest
 from datetime import datetime
-from pathlib import Path
+import unittest
 
-from strategy.config import load_config
-from strategy.pipelines.risk import process_risk_pipeline
-from strategy.pipelines.risk.signal_builder import build_position_risk_state
-from strategy.types import RuntimeContext, SymbolState
-
-
-class _StubAccount:
-    def __init__(self, nav: float) -> None:
-        self.cash = {"nav": nav}
-
-    def position(self, symbol: str, side):
-        _ = symbol
-        _ = side
-        return None
-
-
-class _StubContext:
-    def __init__(self) -> None:
-        self.now = datetime(2026, 1, 5, 10, 0, 0)
-        self._account = _StubAccount(500000.0)
-
-    def account(self):
-        return self._account
+from yuruquant.core.models import PortfolioRuntime, PortfolioSnapshot
+from yuruquant.portfolio.risk import evaluate_portfolio_guard
 
 
 class RiskPipelineTest(unittest.TestCase):
-    def test_hard_stop_generates_close_signal(self):
-        cfg = load_config(Path("config/strategy.yaml"))
-        runtime = RuntimeContext(cfg=cfg)
-        runtime.context = _StubContext()
-
-        state = SymbolState(csymbol="DCE.p", main_symbol="DCE.p2409")
-        state.position_risk = build_position_risk_state(
-            runtime=runtime,
+    def test_daily_loss_halts_portfolio(self):
+        state = PortfolioRuntime(initial_equity=500000.0, current_equity=500000.0, equity_peak=500000.0, daily_start_equity=500000.0, current_date="2026-01-05")
+        decision = evaluate_portfolio_guard(
             state=state,
-            direction=1,
-            entry_price=100.0,
-            atr_val=1.0,
-            campaign_id="demo",
-            entry_eob=datetime(2026, 1, 5, 9, 0, 0),
+            snapshot=PortfolioSnapshot(equity=470000.0, cash=470000.0),
+            max_daily_loss_ratio=0.05,
+            max_drawdown_halt_ratio=0.15,
+            trade_time=datetime(2026, 1, 5, 14, 0, 0),
+            fallback_equity=500000.0,
         )
-
-        stop_price = state.position_risk.initial_stop_loss
-        should_stop, signal = process_risk_pipeline(
-            runtime,
-            state,
-            "DCE.p",
-            "DCE.p2409",
-            datetime(2026, 1, 5, 10, 5, 0),
-            current_price=stop_price - 0.1,
-            atr_val=1.0,
-            long_qty=3,
-            short_qty=0,
-        )
-
-        self.assertTrue(should_stop)
-        self.assertIsNotNone(signal)
-        self.assertEqual(signal.action, "close_long")
+        self.assertFalse(decision.allow_entries)
+        self.assertTrue(decision.force_flatten)
+        self.assertEqual(state.risk_state, "halt_daily_loss")
 
 
 if __name__ == "__main__":
