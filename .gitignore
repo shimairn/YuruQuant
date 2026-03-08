@@ -31,6 +31,7 @@ reports/
 data/
 logs/
 *.log
+config/
 
 # Notebook
 .ipynb_checkpoints/
