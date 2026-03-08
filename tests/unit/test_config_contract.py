@@ -15,6 +15,7 @@ class ConfigContractTest(unittest.TestCase):
         self.assertEqual(config.execution.fill_policy, 'next_bar_open')
         self.assertEqual(config.strategy.environment.macd_signal, 9)
         self.assertEqual(config.portfolio.risk_per_trade_ratio, 0.015)
+        self.assertEqual(config.portfolio.max_total_armed_risk_ratio, 0.0)
         self.assertEqual(config.strategy.entry.breakout_atr_buffer, 0.30)
         self.assertEqual(config.strategy.entry.session_end_buffer_bars, 0)
         self.assertEqual(config.strategy.entry.entry_block_major_gap_bars, 0)
@@ -75,6 +76,7 @@ observability:
         self.assertEqual(config.strategy.exit.armed_flush_buffer_bars, 0)
         self.assertEqual(config.strategy.exit.armed_flush_min_gap_minutes, 180)
         self.assertEqual(config.portfolio.risk_per_trade_ratio, 0.015)
+        self.assertEqual(config.portfolio.max_total_armed_risk_ratio, 0.0)
 
     def test_reject_legacy_schema(self):
         text = """
@@ -284,6 +286,44 @@ observability:
                     path.write_text(payload, encoding='utf-8')
                     with self.assertRaises(ValueError):
                         load_config(path)
+
+    def test_reject_negative_max_total_armed_risk_ratio(self):
+        text = """
+runtime:
+  mode: BACKTEST
+  run_id: demo
+broker:
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    backtest:
+      start: "2025-01-01 00:00:00"
+      end: "2025-01-31 15:00:00"
+universe:
+  symbols: [DCE.P]
+strategy:
+  environment: {}
+  entry: {}
+  exit: {}
+portfolio:
+  risk_per_trade_ratio: 0.015
+  max_total_armed_risk_ratio: -0.01
+  max_daily_loss_ratio: 0.05
+  max_drawdown_halt_ratio: 0.15
+execution:
+  backtest_commission_ratio: 0.001
+  backtest_slippage_ratio: 0.002
+reporting:
+  enabled: true
+observability:
+  level: WARN
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / 'bad_armed_risk_cap.yaml'
+            path.write_text(text, encoding='utf-8')
+            with self.assertRaises(ValueError):
+                load_config(path)
 
 
 if __name__ == '__main__':

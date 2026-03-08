@@ -57,6 +57,7 @@ strategy:
 
 portfolio:
   risk_per_trade_ratio: 0.015
+  max_total_armed_risk_ratio: 0.0
   max_daily_loss_ratio: 0.05
   max_drawdown_halt_ratio: 0.15
 

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import polars as pl
 
@@ -166,7 +167,46 @@ def _build_hourly_reversal_frame() -> KlineFrame:
     return KlineFrame(frame=pl.DataFrame(rows), symbol='DCE.P2409', frequency='3600s')
 
 
+def _build_demo_entry_signal(campaign_id: str, created_at: datetime, qty: int = 100) -> EntrySignal:
+    return EntrySignal(
+        action='buy',
+        reason='demo',
+        direction=1,
+        qty=qty,
+        price=101.0,
+        stop_loss=98.8,
+        protected_stop_price=101.6,
+        created_at=created_at,
+        entry_atr=1.0,
+        breakout_anchor=100.0,
+        campaign_id=campaign_id,
+        environment_ma=99.0,
+        macd_histogram=0.4,
+    )
+
+
 class ExecutionLayerTest(unittest.TestCase):
+    def _build_entry_engine(self) -> tuple[StrategyEngine, _AcceptedGateway, SymbolRuntime, datetime]:
+        config = load_config(Path('config/strategy.yaml'))
+        config.reporting.enabled = False
+        config.universe.warmup.entry_bars = 5
+        config.universe.warmup.trend_bars = 120
+
+        gateway = _AcceptedGateway()
+        sink = CsvReportSink('reports', 'signals_test.csv', 'executions_test.csv', 'portfolio_test.csv')
+        engine = StrategyEngine(config=config, gateway=gateway, report_sink=sink)
+
+        state = engine.runtime.states_by_csymbol['DCE.P']
+        state.main_symbol = 'DCE.P2409'
+        engine.runtime.symbol_to_csymbol['DCE.P2409'] = 'DCE.P'
+
+        frames = SymbolFrames.create('DCE.P2409', config.universe.entry_frequency, config.universe.trend_frequency, 5, 120)
+        last_eob = datetime(2026, 1, 5, 9, 35, 0)
+        frames.entry.replace(_build_entry_frame(last_close=101.0, last_high=101.4, last_low=100.8, last_eob=last_eob))
+        frames.trend.replace(_build_hourly_reversal_frame())
+        engine.runtime.bar_store['DCE.P2409'] = frames
+        return engine, gateway, state, last_eob
+
     def test_reverse_plan_closes_short_then_opens_long(self):
         config = load_config(Path('config/strategy.yaml'))
         gateway = GMGateway(config)
@@ -375,6 +415,72 @@ class ExecutionLayerTest(unittest.TestCase):
             self.assertIsNone(state.pending_signal)
             self.assertIsNone(state.position)
             self.assertEqual('close_long', gateway.submit_calls[0][0].purpose)
+
+    def test_armed_risk_cap_blocks_entry_when_open_armed_risk_is_full(self):
+        engine, _, state, last_eob = self._build_entry_engine()
+        engine.config.portfolio.max_total_armed_risk_ratio = 0.005
+
+        armed_state = engine.runtime.states_by_csymbol['DCE.M']
+        armed_state.position = ManagedPosition(
+            entry_price=100.0,
+            direction=1,
+            qty=100,
+            entry_atr=1.0,
+            initial_stop_loss=97.8,
+            stop_loss=97.8,
+            protected_stop_price=100.6,
+            phase='armed',
+            campaign_id='armed-open',
+            entry_eob=datetime(2026, 1, 5, 9, 0, 0),
+            breakout_anchor=100.0,
+            highest_price_since_entry=100.0,
+            lowest_price_since_entry=100.0,
+        )
+
+        with patch('yuruquant.core.engine.maybe_generate_entry', return_value=_build_demo_entry_signal('new-entry', last_eob)):
+            engine._process_symbol(state)
+
+        self.assertIsNone(state.pending_signal)
+
+    def test_armed_risk_cap_counts_pending_entries_before_fill(self):
+        engine, _, state, last_eob = self._build_entry_engine()
+        engine.config.portfolio.max_total_armed_risk_ratio = 0.005
+
+        queued_state = engine.runtime.states_by_csymbol['DCE.M']
+        queued_state.pending_signal = _build_demo_entry_signal('queued-entry', last_eob - timedelta(minutes=5))
+        queued_state.pending_signal_eob = last_eob - timedelta(minutes=5)
+
+        with patch('yuruquant.core.engine.maybe_generate_entry', return_value=_build_demo_entry_signal('new-entry', last_eob)):
+            engine._process_symbol(state)
+
+        self.assertIsNone(state.pending_signal)
+
+    def test_armed_risk_cap_ignores_protected_positions(self):
+        engine, _, state, last_eob = self._build_entry_engine()
+        engine.config.portfolio.max_total_armed_risk_ratio = 0.005
+
+        protected_state = engine.runtime.states_by_csymbol['DCE.M']
+        protected_state.position = ManagedPosition(
+            entry_price=100.0,
+            direction=1,
+            qty=100,
+            entry_atr=1.0,
+            initial_stop_loss=97.8,
+            stop_loss=100.6,
+            protected_stop_price=100.6,
+            phase='protected',
+            campaign_id='protected-open',
+            entry_eob=datetime(2026, 1, 5, 9, 0, 0),
+            breakout_anchor=100.0,
+            highest_price_since_entry=100.0,
+            lowest_price_since_entry=100.0,
+        )
+
+        with patch('yuruquant.core.engine.maybe_generate_entry', return_value=_build_demo_entry_signal('new-entry', last_eob)):
+            engine._process_symbol(state)
+
+        self.assertIsNotNone(state.pending_signal)
+        self.assertEqual('new-entry', state.pending_signal.campaign_id)
 
 
 if __name__ == '__main__':

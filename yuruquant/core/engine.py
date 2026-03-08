@@ -6,9 +6,9 @@ from yuruquant.app.config import AppConfig
 from yuruquant.core.execution_diagnostics import build_execution_diagnostics
 from yuruquant.core.fill_policy import NextBarOpenFillPolicy
 from yuruquant.core.frames import SymbolFrames
-from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, PortfolioSnapshot, ReportSink, RuntimeState, Signal, SymbolRuntime
+from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, ReportSink, RuntimeState, Signal, SymbolRuntime
 from yuruquant.core.time import is_after, to_trade_day
-from yuruquant.portfolio.risk import evaluate_portfolio_guard
+from yuruquant.portfolio import check_entry_against_armed_risk_cap, evaluate_portfolio_guard, modeled_portfolio_snapshot
 from yuruquant.reporting.logging import debug, warn
 from yuruquant.strategy.trend_breakout import build_managed_position, compute_environment, compute_exit_pnl, evaluate_exit_signal, make_flatten_signal, maybe_generate_entry
 
@@ -85,23 +85,6 @@ class StrategyEngine:
             return fill_ts, float(fill_price)
         return signal.created_at, float(signal.price)
 
-    def _modeled_portfolio_snapshot(self, fallback_cash: float) -> PortfolioSnapshot:
-        portfolio = self.runtime.portfolio
-        equity = float(portfolio.initial_equity or fallback_cash or 0.0) + float(portfolio.realized_pnl)
-        cost_ratio = self.config.execution.backtest_commission_ratio + self.config.execution.backtest_slippage_ratio
-        for state in self.runtime.states_by_csymbol.values():
-            position = state.position
-            if position is None or not state.main_symbol:
-                continue
-            frames = self.runtime.bar_store.get(state.main_symbol)
-            current_price = position.entry_price
-            if isinstance(frames, SymbolFrames) and not frames.entry.frame.empty_frame:
-                current_price = frames.entry.frame.latest_close() or position.entry_price
-            spec = self.config.universe.instrument_overrides.get(state.csymbol, self.config.universe.instrument_defaults)
-            _, net = compute_exit_pnl(position, current_price, spec.multiplier, cost_ratio)
-            equity += net
-        return PortfolioSnapshot(equity=equity, cash=equity)
-
     def _execute_due_signal(self, state: SymbolRuntime, csymbol: str, symbol: str, signal: Signal) -> None:
         fill_ts, fill_price = self._estimate_fill(symbol, signal)
         spec = self.config.universe.instrument_overrides.get(csymbol, self.config.universe.instrument_defaults)
@@ -171,7 +154,7 @@ class StrategyEngine:
 
         portfolio_snapshot = self.gateway.get_portfolio_snapshot()
         if str(self.config.runtime.mode).upper() == 'BACKTEST':
-            portfolio_snapshot = self._modeled_portfolio_snapshot(self.config.broker.gm.backtest.initial_cash)
+            portfolio_snapshot = modeled_portfolio_snapshot(self.config, self.runtime, self.config.broker.gm.backtest.initial_cash)
         guard = evaluate_portfolio_guard(
             state=self.runtime.portfolio,
             snapshot=portfolio_snapshot,
@@ -213,7 +196,18 @@ class StrategyEngine:
                 current_eob=current_eob,
             )
             if signal is not None:
-                self._queue_signal(state, state.csymbol, symbol, signal)
+                armed_risk_check = check_entry_against_armed_risk_cap(self.config, self.runtime, state.csymbol, signal)
+                if armed_risk_check.breached:
+                    debug(
+                        'engine.entry_blocked_armed_risk_cap',
+                        csymbol=state.csymbol,
+                        current_armed_risk_ratio=f'{armed_risk_check.current_ratio:.4f}',
+                        proposed_entry_risk_ratio=f'{armed_risk_check.proposed_ratio:.4f}',
+                        max_total_armed_risk_ratio=f'{armed_risk_check.cap_ratio:.4f}',
+                        campaign_id=signal.campaign_id,
+                    )
+                else:
+                    self._queue_signal(state, state.csymbol, symbol, signal)
 
         if self.config.reporting.enabled:
             self.report_sink.record_portfolio_day(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, to_trade_day(current_eob), current_eob)
