@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.frames import KlineFrame, ensure_kline_frame
 from yuruquant.core.models import ExecutionResult, MarketEvent, NormalizedBar, OrderIntent, PortfolioSnapshot, PositionSnapshot, Signal
 from yuruquant.core.time import normalize_frequency

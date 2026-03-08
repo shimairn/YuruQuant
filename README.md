@@ -7,6 +7,7 @@ YuruQuant is a GM-only domestic futures trading runtime built around a thin GM a
 - `main.py`: single startup entrypoint.
 - `config/strategy.yaml`: primary live/backtest config.
 - `config/smoke_dual_core.yaml`: small 2-symbol smoke backtest config.
+- `config.example/*.yaml`: tracked template configs you can copy into the ignored `config/` folder.
 - `scripts/grid_search_dual_core.py`: local parameter sweep runner.
 - `yuruquant/app`: CLI parsing, config loading, dependency assembly, runtime bootstrap.
 - `yuruquant/adapters/gm`: all `gm.api` integration, contract mapping, subscriptions, order submission, callbacks.
@@ -42,6 +43,24 @@ Current strategy defaults are intentionally minimal and fully V3-aligned:
   - Signals are produced on the current `5m` processing point and executed on the next `5m` bar open
 - Portfolio protection: daily loss halt and max drawdown halt
 
+## Config Setup
+
+The local `config/` folder is ignored by Git. Copy a tracked template from `config.example/` before running:
+
+```powershell
+New-Item -ItemType Directory -Force config | Out-Null
+Copy-Item config.example\strategy.yaml config\strategy.yaml
+Copy-Item config.example\smoke_dual_core.yaml config\smoke_dual_core.yaml
+Copy-Item config.example\liquid_top10_dual_core.yaml config\liquid_top10_dual_core.yaml
+```
+
+Then either fill `broker.gm.token` and `broker.gm.strategy_id` in your local files or set them via environment variables:
+
+```powershell
+$env:GM_TOKEN = "your-gm-token"
+$env:GM_STRATEGY_ID = "your-gm-strategy-id"
+```
+
 ## Run
 
 Use the verified local `minner` interpreter on this machine:
@@ -63,7 +82,7 @@ C:\Users\wuktt\miniconda3\envs\minner\python.exe main.py --mode BACKTEST --confi
 C:\Users\wuktt\miniconda3\envs\minner\python.exe scripts\grid_search_dual_core.py --force
 ```
 
-Summary output is written to `reports/grid_dual_core_2x3m/summary.csv`.
+Summary output is written to `reports/grid_a_bridge_top10_3m/summary.csv` by default.
 
 ## Test
 

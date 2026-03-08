@@ -5,9 +5,11 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from yuruquant.adapters.gm import GMCallbacks, GMGateway
+from yuruquant.adapters.gm.callbacks import GMCallbacks
+from yuruquant.adapters.gm.gateway import GMGateway
 from yuruquant.app.cli import CLIArgs
-from yuruquant.app.config import AppConfig, load_config
+from yuruquant.app.config_loader import load_config
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.engine import StrategyEngine
 from yuruquant.core.fill_policy import NextBarOpenFillPolicy
 from yuruquant.reporting import CsvReportSink, configure, info

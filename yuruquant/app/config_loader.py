@@ -145,6 +145,8 @@ def load_config(path: str | Path) -> AppConfig:
         raise ValueError('strategy.exit.armed_flush_buffer_bars must be >= 0')
     if int(exit_cfg['armed_flush_min_gap_minutes']) < 0:
         raise ValueError('strategy.exit.armed_flush_min_gap_minutes must be >= 0')
+    if int(exit_cfg['session_flat_all_phases_buffer_bars']) < 0:
+        raise ValueError('strategy.exit.session_flat_all_phases_buffer_bars must be >= 0')
 
     if float(portfolio['risk_per_trade_ratio']) <= 0:
         raise ValueError('portfolio.risk_per_trade_ratio must be > 0')
@@ -201,6 +203,7 @@ def load_config(path: str | Path) -> AppConfig:
                 ascended_activate_r=max(float(exit_cfg['ascended_activate_r']), 0.0),
                 armed_flush_buffer_bars=max(int(exit_cfg['armed_flush_buffer_bars']), 0),
                 armed_flush_min_gap_minutes=max(int(exit_cfg['armed_flush_min_gap_minutes']), 0),
+                session_flat_all_phases_buffer_bars=max(int(exit_cfg['session_flat_all_phases_buffer_bars']), 0),
             ),
         ),
         portfolio=PortfolioConfig(

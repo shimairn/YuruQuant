@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.frames import SymbolFrames
 from yuruquant.core.models import PortfolioSnapshot, RuntimeState
-from yuruquant.strategy.trend_breakout import compute_exit_pnl
+from yuruquant.strategy.trend_breakout.exit_state import compute_exit_pnl
 
 
 def modeled_portfolio_snapshot(config: AppConfig, runtime: RuntimeState, fallback_cash: float) -> PortfolioSnapshot:

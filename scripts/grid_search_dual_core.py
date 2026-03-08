@@ -14,8 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from yuruquant.app.config import AppConfig, load_config
-from yuruquant.reporting.analysis import build_trade_diagnostics, build_trade_records, summarize_backtest_run, write_trade_diagnostics_csv
+from yuruquant.app.config_loader import load_config
+from yuruquant.app.config_schema import AppConfig
+from yuruquant.reporting.diagnostics import build_trade_diagnostics, write_trade_diagnostics_csv
+from yuruquant.reporting.summary import summarize_backtest_run
+from yuruquant.reporting.trade_records import build_trade_records
 
 
 DEFAULT_PROTECTED_RS = (1.5, 1.8)

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.execution_diagnostics import build_execution_diagnostics
 from yuruquant.core.fill_policy import NextBarOpenFillPolicy
 from yuruquant.core.frames import SymbolFrames
 from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, ReportSink, RuntimeState, Signal, SymbolRuntime
-from yuruquant.core.time import is_after, to_trade_day
-from yuruquant.portfolio import check_entry_against_armed_risk_cap, evaluate_portfolio_guard, modeled_portfolio_snapshot
+from yuruquant.core.time import is_after, normalize_frequency, to_trade_day
+from yuruquant.portfolio.accounting import modeled_portfolio_snapshot
+from yuruquant.portfolio.armed_exposure import check_entry_against_armed_risk_cap
+from yuruquant.portfolio.risk import evaluate_portfolio_guard
 from yuruquant.reporting.logging import debug, warn
-from yuruquant.strategy.trend_breakout import build_managed_position, compute_environment, compute_exit_pnl, evaluate_exit_signal, make_flatten_signal, maybe_generate_entry
+from yuruquant.strategy.trend_breakout.entry_rules import maybe_generate_entry
+from yuruquant.strategy.trend_breakout.environment import compute_environment
+from yuruquant.strategy.trend_breakout.exit_state import build_managed_position, compute_exit_pnl, evaluate_exit_signal, make_flatten_signal
 
 
 class StrategyEngine:
@@ -224,6 +228,8 @@ class StrategyEngine:
 
     def on_market_event(self, event) -> None:
         triggered_symbols: set[str] = set()
+        entry_frequency = normalize_frequency(self.config.universe.entry_frequency)
+        trend_frequency = normalize_frequency(self.config.universe.trend_frequency)
         for bar in event.bars:
             self._set_symbol_mapping(bar.csymbol, bar.symbol)
             state = self.runtime.states_by_csymbol.get(bar.csymbol)
@@ -238,10 +244,11 @@ class StrategyEngine:
                 'close': bar.close,
                 'volume': bar.volume,
             }]
-            if bar.frequency == '5m':
+            bar_frequency = normalize_frequency(bar.frequency)
+            if bar_frequency == entry_frequency:
                 frames.entry.append(payload)
                 triggered_symbols.add(bar.symbol)
-            elif bar.frequency == '1h':
+            elif bar_frequency == trend_frequency:
                 frames.trend.append(payload)
 
         for symbol in sorted(triggered_symbols):

@@ -76,6 +76,7 @@ class ExitConfig:
     ascended_activate_r: float
     armed_flush_buffer_bars: int
     armed_flush_min_gap_minutes: int
+    session_flat_all_phases_buffer_bars: int
 
 
 @dataclass

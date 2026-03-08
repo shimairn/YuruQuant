@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.frames import KlineFrame
 from yuruquant.core.indicators import latest_atr, latest_donchian_channel
 from yuruquant.core.models import EntrySignal, EnvironmentSnapshot, InstrumentSpec, PortfolioRuntime

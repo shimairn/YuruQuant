@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.time import parse_datetime
 from yuruquant.reporting.logging import warn
 

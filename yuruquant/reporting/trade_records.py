@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Mapping
 
 
+ASCENDED_PROFIT_FLOOR_R = 0.5
+
+
 TRADE_DIAGNOSTIC_COLUMNS = [
     'campaign_id',
     'csymbol',
@@ -97,6 +100,18 @@ def load_csv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def realized_stop_prices(entry_signal_price: float, entry_fill_price: float, initial_stop_loss: float, protected_stop_price: float) -> tuple[float, float]:
+    fill_shift = float(entry_fill_price) - float(entry_signal_price)
+    return float(initial_stop_loss) + fill_shift, float(protected_stop_price) + fill_shift
+
+
+def ascended_profit_floor(direction: int, entry_price: float, initial_stop_loss: float, protected_stop_price: float) -> float:
+    initial_risk = max(abs(float(entry_price) - float(initial_stop_loss)), 1e-9)
+    if direction > 0:
+        return max(float(protected_stop_price), float(entry_price) + ASCENDED_PROFIT_FLOOR_R * initial_risk)
+    return min(float(protected_stop_price), float(entry_price) - ASCENDED_PROFIT_FLOOR_R * initial_risk)
+
+
 def theoretical_stop_metrics(
     direction: int,
     qty: int,
@@ -105,12 +120,15 @@ def theoretical_stop_metrics(
     initial_stop_loss: float,
     protected_stop_price: float,
     exit_trigger: str,
+    phase_at_exit: str,
 ) -> tuple[float | None, float | None, float | None, float | None]:
     theoretical_stop_price: float | None = None
     if exit_trigger == 'hard_stop':
         theoretical_stop_price = initial_stop_loss if initial_stop_loss > 0 else None
     elif exit_trigger == 'protected_stop':
         theoretical_stop_price = protected_stop_price if protected_stop_price > 0 else None
+        if theoretical_stop_price is not None and phase_at_exit == 'ascended':
+            theoretical_stop_price = ascended_profit_floor(direction, entry_price, initial_stop_loss, protected_stop_price)
 
     if theoretical_stop_price is None:
         return None, None, None, None
@@ -191,14 +209,15 @@ def build_trade_records(
         entry_fill_ts = normalize_optional(entry_execution.get('fill_ts') if entry_execution else entry_signal_ts)
         exit_signal_ts = normalize_optional(exit_row.get('ts'))
         exit_fill_ts = normalize_optional(exit_execution.get('fill_ts') if exit_execution else exit_signal_ts)
-        entry_execution_regime = normalize_optional(entry_execution.get('execution_regime') if entry_execution else '')
         exit_execution_regime = normalize_optional(exit_execution.get('execution_regime') if exit_execution else '')
-        entry_fill_gap_points = to_float(entry_execution.get('fill_gap_points') if entry_execution else None)
         exit_fill_gap_points = to_float(exit_execution.get('fill_gap_points') if exit_execution else None)
-        entry_fill_gap_atr = to_float(entry_execution.get('fill_gap_atr') if entry_execution else None)
         exit_fill_gap_atr = to_float(exit_execution.get('fill_gap_atr') if exit_execution else None)
-        initial_stop_loss = to_float(row.get('stop_or_trigger'))
-        protected_stop_price = to_float(row.get('protected_stop_price'))
+        initial_stop_loss, protected_stop_price = realized_stop_prices(
+            entry_signal_price=entry_signal_price,
+            entry_fill_price=entry_fill_price,
+            initial_stop_loss=to_float(row.get('stop_or_trigger')),
+            protected_stop_price=to_float(row.get('protected_stop_price')),
+        )
         pnl_points = (exit_fill_price - entry_fill_price) if direction > 0 else (entry_fill_price - exit_fill_price)
         gross_pnl = pnl_points * qty * multiplier
         theoretical_stop_price, _, theoretical_stop_gross_pnl, theoretical_stop_abs = theoretical_stop_metrics(
@@ -209,6 +228,7 @@ def build_trade_records(
             initial_stop_loss=initial_stop_loss,
             protected_stop_price=protected_stop_price,
             exit_trigger=normalize_optional(exit_row.get('stop_or_trigger')),
+            phase_at_exit=normalize_optional(exit_row.get('phase')),
         )
         overshoot_pnl = None
         overshoot_ratio = None

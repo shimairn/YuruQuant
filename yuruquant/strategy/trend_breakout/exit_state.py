@@ -1,25 +1,31 @@
 from __future__ import annotations
 
-from yuruquant.app.config import AppConfig
+from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.frames import KlineFrame
 from yuruquant.core.models import EntrySignal, EnvironmentSnapshot, ExitSignal, InstrumentSpec, ManagedPosition
-from yuruquant.strategy.trend_breakout.session_windows import major_session_end_approaching
+from yuruquant.strategy.trend_breakout.session_windows import blocked_by_session_end, major_session_end_approaching
 
 
 ARMED_FLUSH_TRIGGER = 'armed_flush'
+SESSION_FLAT_TRIGGER = 'session_flat'
+ASCENDED_PROFIT_FLOOR_R = 0.5
 
 
 def build_managed_position(signal: EntrySignal, fill_price: float | None = None, fill_ts: object | None = None) -> ManagedPosition:
-    entry_price = float(fill_price) if fill_price is not None else float(signal.price)
+    signal_price = float(signal.price)
+    entry_price = float(fill_price) if fill_price is not None else signal_price
+    fill_shift = entry_price - signal_price
     entry_time = fill_ts if fill_ts is not None else signal.created_at
+    initial_stop_loss = float(signal.stop_loss) + fill_shift
+    protected_stop_price = float(signal.protected_stop_price) + fill_shift
     return ManagedPosition(
         entry_price=entry_price,
         direction=int(signal.direction),
         qty=int(signal.qty),
         entry_atr=float(signal.entry_atr),
-        initial_stop_loss=float(signal.stop_loss),
-        stop_loss=float(signal.stop_loss),
-        protected_stop_price=float(signal.protected_stop_price),
+        initial_stop_loss=initial_stop_loss,
+        stop_loss=initial_stop_loss,
+        protected_stop_price=protected_stop_price,
         phase='armed',
         campaign_id=signal.campaign_id,
         entry_eob=entry_time,
@@ -55,35 +61,42 @@ def _protected_floor(position: ManagedPosition) -> float:
     return min(position.stop_loss, position.protected_stop_price)
 
 
+def _ascended_floor(position: ManagedPosition) -> float:
+    initial_risk = max(abs(position.entry_price - position.initial_stop_loss), 1e-9)
+    if position.direction > 0:
+        profit_floor = position.entry_price + ASCENDED_PROFIT_FLOOR_R * initial_risk
+        return max(position.stop_loss, position.protected_stop_price, profit_floor)
+    profit_floor = position.entry_price - ASCENDED_PROFIT_FLOOR_R * initial_risk
+    return min(position.stop_loss, position.protected_stop_price, profit_floor)
+
+
 def _apply_state_machine(config: AppConfig, position: ManagedPosition) -> None:
     if position.phase == 'armed' and position.mfe_r >= config.strategy.exit.protected_activate_r:
         position.phase = 'protected'
         position.stop_loss = _protected_floor(position)
 
-    if position.mfe_r >= config.strategy.exit.ascended_activate_r:
+    if position.phase != 'ascended' and position.mfe_r >= config.strategy.exit.ascended_activate_r:
         position.phase = 'ascended'
-        position.stop_loss = _protected_floor(position)
-
-
-def _hourly_ma_reversal(position: ManagedPosition, environment: EnvironmentSnapshot) -> bool:
-    close = float(environment.close)
-    moving_average = float(environment.moving_average)
-    if close <= 0 or moving_average <= 0:
-        return False
-    if position.direction > 0:
-        return close < moving_average
-    return close > moving_average
+        position.stop_loss = _ascended_floor(position)
 
 
 def _stop_trigger(position: ManagedPosition, current_price: float, environment: EnvironmentSnapshot) -> str | None:
+    _ = environment
     stop_hit = current_price <= position.stop_loss if position.direction > 0 else current_price >= position.stop_loss
     if stop_hit:
         if position.phase == 'armed':
             return 'hard_stop'
         return 'protected_stop'
-    if position.phase == 'ascended' and _hourly_ma_reversal(position, environment):
-        return 'hourly_ma_stop'
     return None
+
+
+def _should_flatten_by_session_end(config: AppConfig, spec: InstrumentSpec, current_eob: object) -> bool:
+    return blocked_by_session_end(
+        spec=spec,
+        eob=current_eob,
+        frequency=config.universe.entry_frequency,
+        buffer_bars=config.strategy.exit.session_flat_all_phases_buffer_bars,
+    )
 
 
 def _should_flush_armed_position(config: AppConfig, position: ManagedPosition, spec: InstrumentSpec, current_eob: object) -> bool:
@@ -135,6 +148,8 @@ def evaluate_exit_signal(
     trigger = _stop_trigger(position, current_price, environment)
     if trigger is not None:
         return _make_exit_signal(position, action, trigger.replace('_', ' '), trigger, current_price, current_eob, multiplier, cost_ratio)
+    if _should_flatten_by_session_end(config, spec, current_eob):
+        return _make_exit_signal(position, action, 'session flat', SESSION_FLAT_TRIGGER, current_price, current_eob, multiplier, cost_ratio)
     if _should_flush_armed_position(config, position, spec, current_eob):
         return _make_exit_signal(position, action, 'armed flush', ARMED_FLUSH_TRIGGER, current_price, current_eob, multiplier, cost_ratio)
     return None

@@ -12,7 +12,7 @@ from yuruquant.adapters.gm.gateway import GMGateway
 from yuruquant.app.config import load_config
 from yuruquant.core.engine import StrategyEngine
 from yuruquant.core.frames import KlineFrame, SymbolFrames
-from yuruquant.core.models import EntrySignal, ExecutionResult, ExitSignal, ManagedPosition, OrderIntent, PortfolioSnapshot, SymbolRuntime
+from yuruquant.core.models import EntrySignal, ExecutionResult, ExitSignal, ManagedPosition, MarketEvent, NormalizedBar, OrderIntent, PortfolioSnapshot, SymbolRuntime
 from yuruquant.core.time import make_event_id
 from yuruquant.reporting.csv_sink import CsvReportSink
 
@@ -305,6 +305,9 @@ class ExecutionLayerTest(unittest.TestCase):
         self.assertIsNotNone(state.position)
         assert state.position is not None
         self.assertAlmostEqual(state.position.entry_price, 100.9)
+        self.assertAlmostEqual(state.position.initial_stop_loss, 98.7)
+        self.assertAlmostEqual(state.position.stop_loss, 98.7)
+        self.assertAlmostEqual(state.position.protected_stop_price, 101.5)
         self.assertEqual(state.position.entry_eob, datetime(2026, 1, 5, 9, 30, 0))
 
     def test_exit_execution_uses_fill_price_for_realized_pnl(self):
@@ -363,7 +366,7 @@ class ExecutionLayerTest(unittest.TestCase):
         self.assertAlmostEqual(engine.runtime.portfolio.realized_pnl, expected_net)
         self.assertEqual(engine.runtime.portfolio.losses, 1)
         self.assertEqual(engine.runtime.portfolio.trades_count, 1)
-    def test_hourly_exit_is_queued_then_executes_on_next_5m_bar(self):
+    def test_hourly_ma_reversal_no_longer_queues_exit(self):
         config = load_config(Path('config/smoke_dual_core.yaml'))
         config.reporting.enabled = False
         config.universe.warmup.entry_bars = 3
@@ -401,20 +404,10 @@ class ExecutionLayerTest(unittest.TestCase):
 
             engine._process_symbol(state)
 
-            self.assertIsNotNone(state.pending_signal)
-            self.assertEqual('hourly_ma_stop', state.pending_signal.exit_trigger)
-            self.assertEqual(first_eob, state.pending_signal.created_at)
+            self.assertIsNone(state.pending_signal)
             self.assertEqual(0, len(gateway.submit_calls))
             self.assertIsNotNone(state.position)
-
-            second_eob = first_eob + timedelta(minutes=5)
-            frames.entry.append(_build_entry_frame(last_close=100.9, last_high=101.2, last_low=100.7, last_eob=second_eob))
-            engine._process_symbol(state)
-
-            self.assertEqual(1, len(gateway.submit_calls))
-            self.assertIsNone(state.pending_signal)
-            self.assertIsNone(state.position)
-            self.assertEqual('close_long', gateway.submit_calls[0][0].purpose)
+            self.assertEqual('ascended', state.position.phase)
 
     def test_armed_risk_cap_blocks_entry_when_open_armed_risk_is_full(self):
         engine, _, state, last_eob = self._build_entry_engine()
@@ -481,6 +474,52 @@ class ExecutionLayerTest(unittest.TestCase):
 
         self.assertIsNotNone(state.pending_signal)
         self.assertEqual('new-entry', state.pending_signal.campaign_id)
+    def test_on_market_event_accepts_15m_entry_frequency(self):
+        gateway = _AcceptedGateway()
+        config = load_config(Path('config/strategy.yaml'))
+        config.universe.entry_frequency = '900s'
+        config.universe.trend_frequency = '3600s'
+        config.reporting.enabled = False
+        engine = StrategyEngine(config, gateway, CsvReportSink('reports', 'signals.csv', 'executions.csv', 'portfolio_daily.csv'))
+
+        entry_eob = datetime(2026, 1, 5, 9, 15, 0)
+        trend_eob = datetime(2026, 1, 5, 10, 0, 0)
+        event = MarketEvent(
+            trade_time=entry_eob,
+            bars=[
+                NormalizedBar(
+                    csymbol='DCE.P',
+                    symbol='DCE.P2409',
+                    frequency='900s',
+                    eob=entry_eob,
+                    open=100.0,
+                    high=101.0,
+                    low=99.5,
+                    close=100.8,
+                    volume=1000.0,
+                ),
+                NormalizedBar(
+                    csymbol='DCE.P',
+                    symbol='DCE.P2409',
+                    frequency='3600s',
+                    eob=trend_eob,
+                    open=100.0,
+                    high=101.5,
+                    low=99.0,
+                    close=100.9,
+                    volume=5000.0,
+                ),
+            ],
+        )
+
+        with patch.object(engine, '_process_symbol') as mock_process:
+            engine.on_market_event(event)
+
+        frames = engine.runtime.bar_store['DCE.P2409']
+        self.assertEqual(1, len(frames.entry))
+        self.assertEqual(1, len(frames.trend))
+        mock_process.assert_called_once()
+
 
 
 if __name__ == '__main__':

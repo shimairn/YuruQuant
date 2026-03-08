@@ -24,6 +24,7 @@ class ConfigContractTest(unittest.TestCase):
         self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
         self.assertEqual(config.strategy.exit.armed_flush_buffer_bars, 0)
         self.assertEqual(config.strategy.exit.armed_flush_min_gap_minutes, 180)
+        self.assertEqual(config.strategy.exit.session_flat_all_phases_buffer_bars, 0)
         self.assertEqual(config.universe.warmup.entry_bars, 180)
         self.assertEqual(config.reporting.output_dir, 'reports')
         self.assertTrue(config.broker.gm.subscribe_wait_group)
@@ -75,6 +76,7 @@ observability:
         self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
         self.assertEqual(config.strategy.exit.armed_flush_buffer_bars, 0)
         self.assertEqual(config.strategy.exit.armed_flush_min_gap_minutes, 180)
+        self.assertEqual(config.strategy.exit.session_flat_all_phases_buffer_bars, 0)
         self.assertEqual(config.portfolio.risk_per_trade_ratio, 0.015)
         self.assertEqual(config.portfolio.max_total_armed_risk_ratio, 0.0)
 
@@ -286,6 +288,43 @@ observability:
                     path.write_text(payload, encoding='utf-8')
                     with self.assertRaises(ValueError):
                         load_config(path)
+
+    def test_reject_negative_session_flat_all_phases_buffer_bars(self):
+        text = """
+runtime:
+  mode: BACKTEST
+  run_id: demo
+broker:
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    backtest:
+      start: "2025-01-01 00:00:00"
+      end: "2025-01-31 15:00:00"
+universe:
+  symbols: [DCE.P]
+strategy:
+  environment: {}
+  entry: {}
+  exit:
+    session_flat_all_phases_buffer_bars: -1
+portfolio:
+  max_daily_loss_ratio: 0.05
+  max_drawdown_halt_ratio: 0.15
+execution:
+  backtest_commission_ratio: 0.001
+  backtest_slippage_ratio: 0.002
+reporting:
+  enabled: true
+observability:
+  level: WARN
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / 'bad_session_flat.yaml'
+            path.write_text(text, encoding='utf-8')
+            with self.assertRaises(ValueError):
+                load_config(path)
 
     def test_reject_negative_max_total_armed_risk_ratio(self):
         text = """
