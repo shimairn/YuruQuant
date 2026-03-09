@@ -97,6 +97,7 @@ class StrategyRulesTest(unittest.TestCase):
         self.config = load_config(Path('config/strategy.yaml'))
         self.portfolio = PortfolioRuntime(current_equity=500000.0, effective_risk_mult=1.0)
         self.spec = self.config.universe.instrument_defaults
+        self.ag_spec = load_config(Path('config/smoke_dual_core.yaml')).universe.instrument_overrides['SHFE.AG']
         self.long_environment = compute_environment(build_trend_frame(direction=1), 60, 12, 26, 9)
         self.short_environment = compute_environment(build_trend_frame(direction=-1), 60, 12, 26, 9)
         self.reversal_environment = compute_environment(build_hourly_reversal_frame_for_long_exit(), 60, 12, 26, 9)
@@ -213,23 +214,25 @@ class StrategyRulesTest(unittest.TestCase):
         self.assertGreaterEqual(position.mfe_r, 1.2)
         self.assertAlmostEqual(100.6, position.stop_loss, places=6)
 
-    def test_protected_moves_to_ascended_with_positive_half_r_floor(self):
+
+
+    def test_protected_floor_stays_at_compensation_line_after_further_mfe(self):
         position = build_managed_position(self._entry_signal())
         protected_frame = build_breakout_frame(up=True, latest_close=101.0, latest_high=103.0, latest_low=100.7)
         evaluate_exit_signal(self.config, position, protected_frame, self.long_environment, protected_frame.latest_eob(), self.spec, 10.0, 0.003)
-        ascended_frame = build_breakout_frame(up=True, latest_close=104.0, latest_high=105.8, latest_low=103.8)
-        signal = evaluate_exit_signal(self.config, position, ascended_frame, self.long_environment, ascended_frame.latest_eob(), self.spec, 10.0, 0.003)
+        stronger_frame = build_breakout_frame(up=True, latest_close=104.0, latest_high=105.8, latest_low=103.8)
+        signal = evaluate_exit_signal(self.config, position, stronger_frame, self.long_environment, stronger_frame.latest_eob(), self.spec, 10.0, 0.003)
         self.assertIsNone(signal)
-        self.assertEqual('ascended', position.phase)
-        self.assertAlmostEqual(101.1, position.stop_loss, places=6)
+        self.assertEqual('protected', position.phase)
+        self.assertAlmostEqual(100.6, position.stop_loss, places=6)
 
-    def test_short_ascended_uses_positive_half_r_floor(self):
+    def test_short_protected_floor_stays_at_compensation_line(self):
         position = build_managed_position(self._short_entry_signal())
-        ascended_frame = build_breakout_frame(up=False, latest_close=96.0, latest_high=96.4, latest_low=94.0)
-        signal = evaluate_exit_signal(self.config, position, ascended_frame, self.short_environment, ascended_frame.latest_eob(), self.spec, 10.0, 0.003)
+        favorable_frame = build_breakout_frame(up=False, latest_close=96.0, latest_high=96.4, latest_low=94.0)
+        signal = evaluate_exit_signal(self.config, position, favorable_frame, self.short_environment, favorable_frame.latest_eob(), self.spec, 10.0, 0.003)
         self.assertIsNone(signal)
-        self.assertEqual('ascended', position.phase)
-        self.assertAlmostEqual(98.9, position.stop_loss, places=6)
+        self.assertEqual('protected', position.phase)
+        self.assertAlmostEqual(99.4, position.stop_loss, places=6)
 
     def test_fill_shift_preserves_initial_risk_and_protected_offset(self):
         position = build_managed_position(self._entry_signal(), fill_price=101.3, fill_ts=datetime(2026, 1, 5, 10, 5, 0))
@@ -238,25 +241,25 @@ class StrategyRulesTest(unittest.TestCase):
         self.assertAlmostEqual(101.9, position.protected_stop_price, places=6)
         self.assertEqual(datetime(2026, 1, 5, 10, 5, 0), position.entry_eob)
 
-    def test_ascended_ignores_5m_noise_above_protected_floor(self):
+    def test_protected_ignores_5m_noise_above_compensation_floor(self):
         position = build_managed_position(self._entry_signal())
-        position.phase = 'ascended'
+        position.phase = 'protected'
         position.stop_loss = 100.6
         position.protected_stop_price = 100.6
         frame = build_breakout_frame(up=True, latest_close=100.8, latest_high=101.4, latest_low=100.0)
         signal = evaluate_exit_signal(self.config, position, frame, self.long_environment, frame.latest_eob(), self.spec, 10.0, 0.003)
         self.assertIsNone(signal)
-        self.assertEqual('ascended', position.phase)
+        self.assertEqual('protected', position.phase)
 
-    def test_ascended_holds_when_only_hourly_ma_reversal_occurs(self):
+    def test_protected_holds_when_only_hourly_ma_reversal_occurs(self):
         position = build_managed_position(self._entry_signal())
-        position.phase = 'ascended'
+        position.phase = 'protected'
         position.stop_loss = 100.6
         position.protected_stop_price = 100.6
         frame = build_breakout_frame(up=True, latest_close=101.0, latest_high=101.2, latest_low=100.8)
         signal = evaluate_exit_signal(self.config, position, frame, self.reversal_environment, frame.latest_eob(), self.spec, 10.0, 0.003)
         self.assertIsNone(signal)
-        self.assertEqual('ascended', position.phase)
+        self.assertEqual('protected', position.phase)
 
     def test_armed_flush_triggers_only_before_major_session_gap(self):
         self.config.strategy.exit.armed_flush_buffer_bars = 1
@@ -302,17 +305,18 @@ class StrategyRulesTest(unittest.TestCase):
         )
         protected_signal = evaluate_exit_signal(self.config, protected_position, day_close_frame, self.long_environment, day_close_frame.latest_eob(), self.spec, 10.0, 0.003)
         self.assertIsNone(protected_signal)
-    def test_session_flat_triggers_for_all_phases_before_any_session_end(self):
+    def test_session_flat_triggers_for_all_phases_before_trading_day_end(self):
         self.config.strategy.exit.session_flat_all_phases_buffer_bars = 1
+        self.config.strategy.exit.session_flat_scope = 'trading_day_end_only'
         frame = build_breakout_frame(
             up=True,
             latest_close=100.8,
             latest_high=101.0,
             latest_low=100.7,
-            end_eob=datetime(2026, 1, 5, 11, 25, 0),
+            end_eob=datetime(2026, 1, 5, 14, 55, 0),
         )
 
-        for phase in ('armed', 'protected', 'ascended'):
+        for phase in ('armed', 'protected'):
             with self.subTest(phase=phase):
                 position = build_managed_position(self._entry_signal())
                 position.phase = phase
@@ -324,8 +328,50 @@ class StrategyRulesTest(unittest.TestCase):
                 self.assertEqual('session_flat', signal.exit_trigger)
                 self.assertEqual(phase, signal.phase)
 
+    def test_trading_day_session_flat_skips_lunch_and_same_trade_day_night_reopen(self):
+        self.config.strategy.exit.session_flat_all_phases_buffer_bars = 1
+        self.config.strategy.exit.session_flat_scope = 'trading_day_end_only'
+
+        lunch_position = build_managed_position(self._entry_signal())
+        lunch_frame = build_breakout_frame(
+            up=True,
+            latest_close=100.8,
+            latest_high=101.0,
+            latest_low=100.7,
+            end_eob=datetime(2026, 1, 5, 11, 25, 0),
+        )
+        lunch_signal = evaluate_exit_signal(self.config, lunch_position, lunch_frame, self.long_environment, lunch_frame.latest_eob(), self.spec, 10.0, 0.003)
+        self.assertIsNone(lunch_signal)
+
+        night_position = build_managed_position(self._entry_signal())
+        night_frame = build_breakout_frame(
+            up=True,
+            latest_close=100.8,
+            latest_high=101.0,
+            latest_low=100.7,
+            end_eob=datetime(2026, 1, 6, 2, 25, 0),
+        )
+        night_signal = evaluate_exit_signal(self.config, night_position, night_frame, self.long_environment, night_frame.latest_eob(), self.ag_spec, 15.0, 0.003)
+        self.assertIsNone(night_signal)
+
+    def test_session_flat_all_session_scope_preserves_previous_behavior(self):
+        self.config.strategy.exit.session_flat_all_phases_buffer_bars = 1
+        self.config.strategy.exit.session_flat_scope = 'all_session_ends'
+        position = build_managed_position(self._entry_signal())
+        frame = build_breakout_frame(
+            up=True,
+            latest_close=100.8,
+            latest_high=101.0,
+            latest_low=100.7,
+            end_eob=datetime(2026, 1, 5, 11, 25, 0),
+        )
+        signal = evaluate_exit_signal(self.config, position, frame, self.long_environment, frame.latest_eob(), self.spec, 10.0, 0.003)
+        self.assertIsNotNone(signal)
+        self.assertEqual('session_flat', signal.exit_trigger)
+
     def test_session_flat_disabled_keeps_previous_behavior(self):
-        self.config.strategy.exit.session_flat_all_phases_buffer_bars = 0
+        self.config.strategy.exit.session_flat_all_phases_buffer_bars = 1
+        self.config.strategy.exit.session_flat_scope = 'disabled'
         protected_position = build_managed_position(self._entry_signal())
         protected_position.phase = 'protected'
         protected_position.stop_loss = 100.6

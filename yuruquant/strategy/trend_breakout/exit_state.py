@@ -1,14 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from yuruquant.app.config_schema import AppConfig
 from yuruquant.core.frames import KlineFrame
 from yuruquant.core.models import EntrySignal, EnvironmentSnapshot, ExitSignal, InstrumentSpec, ManagedPosition
-from yuruquant.strategy.trend_breakout.session_windows import blocked_by_session_end, major_session_end_approaching
+from yuruquant.core.session_clock import blocked_by_session_end, major_session_end_approaching, trading_day_end_approaching
 
 
 ARMED_FLUSH_TRIGGER = 'armed_flush'
 SESSION_FLAT_TRIGGER = 'session_flat'
-ASCENDED_PROFIT_FLOOR_R = 0.5
 
 
 def build_managed_position(signal: EntrySignal, fill_price: float | None = None, fill_ts: object | None = None) -> ManagedPosition:
@@ -61,23 +60,10 @@ def _protected_floor(position: ManagedPosition) -> float:
     return min(position.stop_loss, position.protected_stop_price)
 
 
-def _ascended_floor(position: ManagedPosition) -> float:
-    initial_risk = max(abs(position.entry_price - position.initial_stop_loss), 1e-9)
-    if position.direction > 0:
-        profit_floor = position.entry_price + ASCENDED_PROFIT_FLOOR_R * initial_risk
-        return max(position.stop_loss, position.protected_stop_price, profit_floor)
-    profit_floor = position.entry_price - ASCENDED_PROFIT_FLOOR_R * initial_risk
-    return min(position.stop_loss, position.protected_stop_price, profit_floor)
-
-
 def _apply_state_machine(config: AppConfig, position: ManagedPosition) -> None:
     if position.phase == 'armed' and position.mfe_r >= config.strategy.exit.protected_activate_r:
         position.phase = 'protected'
         position.stop_loss = _protected_floor(position)
-
-    if position.phase != 'ascended' and position.mfe_r >= config.strategy.exit.ascended_activate_r:
-        position.phase = 'ascended'
-        position.stop_loss = _ascended_floor(position)
 
 
 def _stop_trigger(position: ManagedPosition, current_price: float, environment: EnvironmentSnapshot) -> str | None:
@@ -91,6 +77,16 @@ def _stop_trigger(position: ManagedPosition, current_price: float, environment: 
 
 
 def _should_flatten_by_session_end(config: AppConfig, spec: InstrumentSpec, current_eob: object) -> bool:
+    scope = str(config.strategy.exit.session_flat_scope).strip()
+    if scope == 'disabled':
+        return False
+    if scope == 'trading_day_end_only':
+        return trading_day_end_approaching(
+            spec=spec,
+            eob=current_eob,
+            frequency=config.universe.entry_frequency,
+            buffer_bars=config.strategy.exit.session_flat_all_phases_buffer_bars,
+        )
     return blocked_by_session_end(
         spec=spec,
         eob=current_eob,

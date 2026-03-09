@@ -73,10 +73,10 @@ class EntryConfig:
 class ExitConfig:
     hard_stop_atr: float
     protected_activate_r: float
-    ascended_activate_r: float
     armed_flush_buffer_bars: int
     armed_flush_min_gap_minutes: int
     session_flat_all_phases_buffer_bars: int
+    session_flat_scope: str
 
 
 @dataclass

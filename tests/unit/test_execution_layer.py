@@ -366,6 +366,8 @@ class ExecutionLayerTest(unittest.TestCase):
         self.assertAlmostEqual(engine.runtime.portfolio.realized_pnl, expected_net)
         self.assertEqual(engine.runtime.portfolio.losses, 1)
         self.assertEqual(engine.runtime.portfolio.trades_count, 1)
+
+
     def test_hourly_ma_reversal_no_longer_queues_exit(self):
         config = load_config(Path('config/smoke_dual_core.yaml'))
         config.reporting.enabled = False
@@ -386,7 +388,7 @@ class ExecutionLayerTest(unittest.TestCase):
                 initial_stop_loss=97.8,
                 stop_loss=100.6,
                 protected_stop_price=100.6,
-                phase='ascended',
+                phase='protected',
                 campaign_id='demo',
                 entry_eob=datetime(2026, 1, 5, 9, 0, 0),
                 breakout_anchor=100.5,
@@ -407,7 +409,7 @@ class ExecutionLayerTest(unittest.TestCase):
             self.assertIsNone(state.pending_signal)
             self.assertEqual(0, len(gateway.submit_calls))
             self.assertIsNotNone(state.position)
-            self.assertEqual('ascended', state.position.phase)
+            self.assertEqual('protected', state.position.phase)
 
     def test_armed_risk_cap_blocks_entry_when_open_armed_risk_is_full(self):
         engine, _, state, last_eob = self._build_entry_engine()

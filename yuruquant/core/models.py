@@ -6,7 +6,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 
 Action = Literal['buy', 'sell', 'close_long', 'close_short']
-Phase = Literal['armed', 'protected', 'ascended']
+Phase = Literal['armed', 'protected']
 
 
 @dataclass(frozen=True)
@@ -242,6 +242,7 @@ class ReportSink(Protocol):
     ) -> None: ...
 
     def record_portfolio_day(self, runtime: RuntimeState, mode: str, run_id: str, trade_day: str, snapshot_ts: object) -> None: ...
+
 
 
 

@@ -5,7 +5,7 @@ from typing import Any
 
 import polars as pl
 
-from yuruquant.core.time import frequency_to_timedelta, parse_datetime
+from yuruquant.core.time import exchange_datetime, frequency_to_timedelta
 
 try:
     import pandas as pd
@@ -67,7 +67,7 @@ def _normalize_rows(raw: object) -> list[dict[str, object]]:
             continue
         rows.append(
             {
-                'eob': parse_datetime(eob),
+                'eob': exchange_datetime(eob),
                 'open': _to_float(_extract(item, 'open', 0.0)),
                 'high': _to_float(_extract(item, 'high', 0.0)),
                 'low': _to_float(_extract(item, 'low', 0.0)),
@@ -201,4 +201,5 @@ class SymbolFrames:
             entry=BarBuffer.create(symbol, entry_frequency, max(int(entry_bars) * 4, 240)),
             trend=BarBuffer.create(symbol, trend_frequency, max(int(trend_bars) * 4, 160)),
         )
+
 

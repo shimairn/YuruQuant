@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from yuruquant.core.execution_diagnostics import build_execution_diagnostics
 from yuruquant.core.models import ExitSignal, InstrumentSpec, ManagedPosition
@@ -50,7 +50,7 @@ class ExecutionDiagnosticsTest(unittest.TestCase):
             phase='protected',
         )
 
-        diagnostics = build_execution_diagnostics(signal, datetime(2026, 1, 5, 13, 10, 0), 104.5, self.spec, position)
+        diagnostics = build_execution_diagnostics(signal, datetime(2026, 1, 5, 13, 10, 0, tzinfo=timezone.utc), 104.5, self.spec, position)
 
         self.assertEqual('session_restart_gap', diagnostics.execution_regime)
         self.assertAlmostEqual(0.5, diagnostics.fill_gap_points)
@@ -88,7 +88,7 @@ class ExecutionDiagnosticsTest(unittest.TestCase):
             phase='armed',
         )
 
-        diagnostics = build_execution_diagnostics(signal, datetime(2026, 1, 6, 1, 5, 0), 101.8, self.spec, position)
+        diagnostics = build_execution_diagnostics(signal, datetime(2026, 1, 6, 1, 5, 0, tzinfo=timezone.utc), 101.8, self.spec, position)
 
         self.assertEqual('session_restart_gap', diagnostics.execution_regime)
         self.assertAlmostEqual(0.8, diagnostics.fill_gap_points)

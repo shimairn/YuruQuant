@@ -6,7 +6,7 @@ from yuruquant.core.indicators import latest_atr, latest_donchian_channel
 from yuruquant.core.models import EntrySignal, EnvironmentSnapshot, InstrumentSpec, PortfolioRuntime
 from yuruquant.core.time import make_event_id
 from yuruquant.strategy.trend_breakout.risk_model import resolve_order_qty
-from yuruquant.strategy.trend_breakout.session_windows import blocked_by_session_end, is_in_session, major_session_end_approaching
+from yuruquant.core.session_clock import blocked_by_session_end, is_in_session, major_session_end_approaching
 
 
 ATR_PERIOD = 14

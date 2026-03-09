@@ -56,10 +56,10 @@ DEFAULTS: dict[str, Any] = {
         'exit': {
             'hard_stop_atr': 2.2,
             'protected_activate_r': 1.2,
-            'ascended_activate_r': 2.5,
             'armed_flush_buffer_bars': 0,
             'armed_flush_min_gap_minutes': 180,
             'session_flat_all_phases_buffer_bars': 0,
+            'session_flat_scope': 'disabled',
         },
     },
     'portfolio': {
@@ -95,7 +95,7 @@ SESSIONS_KEYS = {'day', 'night'}
 STRATEGY_KEYS = {'environment', 'entry', 'exit'}
 ENVIRONMENT_KEYS = {'ma_period', 'macd_fast', 'macd_slow', 'macd_signal'}
 ENTRY_KEYS = {'donchian_lookback', 'min_channel_width_atr', 'breakout_atr_buffer', 'session_end_buffer_bars', 'entry_block_major_gap_bars'}
-EXIT_KEYS = {'hard_stop_atr', 'protected_activate_r', 'ascended_activate_r', 'armed_flush_buffer_bars', 'armed_flush_min_gap_minutes', 'session_flat_all_phases_buffer_bars'}
+EXIT_KEYS = {'hard_stop_atr', 'protected_activate_r', 'armed_flush_buffer_bars', 'armed_flush_min_gap_minutes', 'session_flat_all_phases_buffer_bars', 'session_flat_scope'}
 PORTFOLIO_KEYS = {'risk_per_trade_ratio', 'max_total_armed_risk_ratio', 'max_daily_loss_ratio', 'max_drawdown_halt_ratio'}
 EXECUTION_KEYS = {'fill_policy', 'backtest_commission_ratio', 'backtest_slippage_ratio'}
 REPORTING_KEYS = {'enabled', 'output_dir', 'signals_filename', 'executions_filename', 'portfolio_daily_filename'}

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import tempfile
@@ -29,7 +29,7 @@ class CostOverlayTest(unittest.TestCase):
                     'campaign_id', 'environment_ma', 'macd_histogram', 'protected_stop_price', 'phase', 'mfe_r'
                 ])
                 writer.writerow(['r', 'BACKTEST', '2026-01-01 09:00:00', 'DCE.P', 'DCE.p2605', 'buy', 'dual_core_breakout', '1', '2', '100', '95', 'c1', '', '', '101', '', ''])
-                writer.writerow(['r', 'BACKTEST', '2026-01-01 10:00:00', 'DCE.P', 'DCE.p2605', 'close_long', 'hourly ma stop', '1', '2', '110', 'hourly_ma_stop', 'c1', '', '', '', 'ascended', '2.5'])
+                writer.writerow(['r', 'BACKTEST', '2026-01-01 10:00:00', 'DCE.P', 'DCE.p2605', 'close_long', 'protected stop', '1', '2', '110', 'protected_stop', 'c1', '', '', '', 'protected', '2.5'])
 
             with executions_path.open('w', newline='', encoding='utf-8') as handle:
                 writer = csv.writer(handle)
@@ -58,16 +58,51 @@ class CostOverlayTest(unittest.TestCase):
             result = apply_cost_overlay(trades, portfolio_path, config, 'realistic_top10_v1', profile_rows=realistic)
 
         self.assertEqual(1, len(result.trade_diagnostics))
+        self.assertAlmostEqual(4200.0, result.trade_diagnostics[0]['turnover'], places=6)
         self.assertAlmostEqual(4.2, result.trade_diagnostics[0]['commission_cost'], places=6)
         self.assertAlmostEqual(60.0, result.trade_diagnostics[0]['slippage_cost'], places=6)
+        self.assertAlmostEqual(64.2, result.trade_diagnostics[0]['total_cost'], places=6)
         self.assertAlmostEqual(135.8, result.trade_diagnostics[0]['actual_net_pnl'], places=6)
         self.assertEqual(12, result.trade_diagnostics[0]['holding_bars'])
         self.assertEqual(0, result.trade_diagnostics[0]['multi_session_hold'])
+        self.assertEqual(1, result.trade_diagnostics[0]['protected_reach'])
+        self.assertEqual(0, result.trade_diagnostics[0]['overnight_hold'])
+        self.assertEqual(0, result.trade_diagnostics[0]['trading_day_flat_exit'])
+        self.assertAlmostEqual(4200.0, result.summary['turnover'], places=6)
+        self.assertAlmostEqual(200.0, result.summary['gross_pnl'], places=6)
+        self.assertAlmostEqual(4.2, result.summary['commission_cost'], places=6)
+        self.assertAlmostEqual(60.0, result.summary['slippage_cost'], places=6)
+        self.assertAlmostEqual(64.2, result.summary['total_cost'], places=6)
+        self.assertAlmostEqual(135.8, result.summary['net_pnl'], places=6)
+        self.assertAlmostEqual(64.2, result.summary['avg_cost_per_trade'], places=6)
+        self.assertAlmostEqual(64.2 / 200.0, result.summary['cost_to_gross_pnl_ratio'], places=9)
+        self.assertAlmostEqual(64.2 / 4200.0, result.summary['cost_to_turnover_ratio'], places=9)
         self.assertAlmostEqual(135.8 / 500000.0, result.summary['net_return_ratio'], places=9)
+        self.assertEqual(1, result.summary['protected_reach_count'])
+        self.assertAlmostEqual(1.0, result.summary['protected_reach_ratio'], places=9)
+        self.assertEqual(0, result.summary['overnight_hold_count'])
         self.assertEqual(0, result.summary['session_flat_exit_count'])
+        self.assertEqual(0, result.summary['trading_day_flat_exit_count'])
+        self.assertAlmostEqual(1.0, result.summary['top_symbol_pnl_share'], places=9)
+        self.assertEqual(1, result.summary['positive_symbol_count'])
         self.assertEqual(0, result.summary['portfolio_halt_count_costed'])
+        self.assertEqual(1, len(result.portfolio_daily))
+        self.assertAlmostEqual(4200.0, result.portfolio_daily[0]['cumulative_turnover'], places=6)
+        self.assertAlmostEqual(4.2, result.portfolio_daily[0]['cumulative_commission_cost'], places=6)
+        self.assertAlmostEqual(60.0, result.portfolio_daily[0]['cumulative_slippage_cost'], places=6)
+        self.assertAlmostEqual(64.2, result.portfolio_daily[0]['cumulative_total_cost'], places=6)
+        self.assertAlmostEqual(4200.0, result.portfolio_daily[0]['daily_turnover'], places=6)
+        self.assertAlmostEqual(4.2, result.portfolio_daily[0]['daily_commission_cost'], places=6)
+        self.assertAlmostEqual(60.0, result.portfolio_daily[0]['daily_slippage_cost'], places=6)
+        self.assertAlmostEqual(64.2, result.portfolio_daily[0]['daily_total_cost'], places=6)
         self.assertEqual(1, len(result.symbol_cost_drag))
+        self.assertAlmostEqual(4200.0, result.symbol_cost_drag[0]['turnover'], places=6)
         self.assertAlmostEqual(64.2, result.symbol_cost_drag[0]['total_cost'], places=6)
+        self.assertAlmostEqual(64.2 / 4200.0, result.symbol_cost_drag[0]['cost_to_turnover_ratio'], places=9)
+        self.assertAlmostEqual(64.2, result.symbol_cost_drag[0]['avg_cost_per_trade'], places=6)
+        self.assertEqual(1, result.symbol_cost_drag[0]['protected_reach_count'])
+        self.assertEqual(0, result.symbol_cost_drag[0]['overnight_hold_count'])
+        self.assertEqual(0, result.symbol_cost_drag[0]['trading_day_flat_exit_count'])
 
 
 if __name__ == '__main__':

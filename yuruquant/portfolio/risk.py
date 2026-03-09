@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from yuruquant.core.models import GuardDecision, PortfolioRuntime, PortfolioSnapshot
-from yuruquant.core.time import to_trade_day
+from yuruquant.core.time import to_exchange_trade_day
 
 
 def evaluate_portfolio_guard(state: PortfolioRuntime, snapshot: PortfolioSnapshot, max_daily_loss_ratio: float, max_drawdown_halt_ratio: float, trade_time: object, fallback_equity: float) -> GuardDecision:
@@ -10,7 +10,7 @@ def evaluate_portfolio_guard(state: PortfolioRuntime, snapshot: PortfolioSnapsho
         equity = float(fallback_equity)
     state.current_equity = equity
 
-    trade_day = to_trade_day(trade_time)
+    trade_day = to_exchange_trade_day(trade_time)
     if state.initial_equity <= 0:
         state.initial_equity = equity
         state.current_equity = equity
@@ -56,3 +56,4 @@ def evaluate_portfolio_guard(state: PortfolioRuntime, snapshot: PortfolioSnapsho
     state.halt_flag = False
     state.halt_reason = ""
     return GuardDecision(allow_entries=True, force_flatten=False)
+

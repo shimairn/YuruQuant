@@ -1,20 +1,13 @@
-from __future__ import annotations
-
-from datetime import datetime, timedelta
+﻿from __future__ import annotations
 
 from yuruquant.core.models import EntrySignal, ExecutionDiagnostics, ExitSignal, InstrumentSpec, ManagedPosition, Signal
-from yuruquant.core.time import parse_datetime
+from yuruquant.core.time import exchange_datetime
 
 
-EXCHANGE_UTC_OFFSET_HOURS = 8
 SESSION_RESTART_WINDOW_MINUTES = 15
 SESSION_RESTART_GAP_ATR_THRESHOLD = 0.25
 STOP_EXIT_TRIGGERS = {'hard_stop', 'protected_stop'}
 SESSION_RESTART_GAP_TRIGGERS = STOP_EXIT_TRIGGERS | {'portfolio_halt'}
-
-
-def _exchange_datetime(value: object) -> datetime:
-    return parse_datetime(value) + timedelta(hours=EXCHANGE_UTC_OFFSET_HOURS)
 
 
 def _parse_session_start(value: str) -> tuple[int, int]:
@@ -25,7 +18,7 @@ def _parse_session_start(value: str) -> tuple[int, int]:
 def is_session_restart_fill(fill_ts: object, spec: InstrumentSpec, window_minutes: int = SESSION_RESTART_WINDOW_MINUTES) -> bool:
     if fill_ts is None:
         return False
-    local_dt = _exchange_datetime(fill_ts)
+    local_dt = exchange_datetime(fill_ts)
     session_starts = [start for start, _ in spec.sessions_day] + [start for start, _ in spec.sessions_night]
     for start in session_starts:
         hour, minute = _parse_session_start(start)

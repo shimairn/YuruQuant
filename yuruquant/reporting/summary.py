@@ -40,7 +40,6 @@ def session_restart_gap_portfolio_halt_stats(trades: list[TradeRecord]) -> tuple
 
 
 def summarize_trades(trades: list[TradeRecord]) -> dict[str, float | int]:
-    trades_count = len(trades)
     if not trades:
         return {
             'trades': 0,
@@ -51,14 +50,10 @@ def summarize_trades(trades: list[TradeRecord]) -> dict[str, float | int]:
             'hard_stop_ratio': 0.0,
             'protected_stop_count': 0,
             'protected_stop_ratio': 0.0,
-            'hourly_ma_stop_count': 0,
-            'hourly_ma_stop_ratio': 0.0,
-            'ascended_exit_count': 0,
-            'ascended_exit_ratio': 0.0,
-            'ascended_protected_stop_count': 0,
-            'ascended_hourly_ma_stop_count': 0,
             'armed_flush_count': 0,
             'armed_flush_ratio': 0.0,
+            'session_flat_exit_count': 0,
+            'session_flat_exit_ratio': 0.0,
             'portfolio_halt_count': 0,
             'session_restart_gap_exit_count': 0,
             'session_restart_gap_exit_ratio': 0.0,
@@ -79,15 +74,13 @@ def summarize_trades(trades: list[TradeRecord]) -> dict[str, float | int]:
             'worst_trade_pnl': 0.0,
         }
 
+    trades_count = len(trades)
     wins = [trade.gross_pnl for trade in trades if trade.gross_pnl > 0]
     losses = [trade.gross_pnl for trade in trades if trade.gross_pnl <= 0]
     hard_stop_count = sum(1 for trade in trades if trade.exit_trigger == 'hard_stop')
     protected_stop_count = sum(1 for trade in trades if trade.exit_trigger == 'protected_stop')
-    hourly_ma_stop_count = sum(1 for trade in trades if trade.exit_trigger == 'hourly_ma_stop')
-    ascended_exit_count = sum(1 for trade in trades if trade.phase_at_exit == 'ascended')
-    ascended_protected_stop_count = sum(1 for trade in trades if trade.phase_at_exit == 'ascended' and trade.exit_trigger == 'protected_stop')
-    ascended_hourly_ma_stop_count = sum(1 for trade in trades if trade.phase_at_exit == 'ascended' and trade.exit_trigger == 'hourly_ma_stop')
     armed_flush_count = sum(1 for trade in trades if trade.exit_trigger == 'armed_flush')
+    session_flat_exit_count = sum(1 for trade in trades if trade.exit_trigger == 'session_flat')
     portfolio_halt_count = sum(1 for trade in trades if trade.exit_trigger == 'portfolio_halt')
     session_restart_gap_exit_count, session_restart_gap_exit_ratio = session_restart_gap_exit_stats(trades)
     session_restart_gap_portfolio_halt_count, session_restart_gap_portfolio_halt_ratio = session_restart_gap_portfolio_halt_stats(trades)
@@ -109,14 +102,10 @@ def summarize_trades(trades: list[TradeRecord]) -> dict[str, float | int]:
         'hard_stop_ratio': hard_stop_count / trades_count,
         'protected_stop_count': protected_stop_count,
         'protected_stop_ratio': protected_stop_count / trades_count,
-        'hourly_ma_stop_count': hourly_ma_stop_count,
-        'hourly_ma_stop_ratio': hourly_ma_stop_count / trades_count,
-        'ascended_exit_count': ascended_exit_count,
-        'ascended_exit_ratio': ascended_exit_count / trades_count,
-        'ascended_protected_stop_count': ascended_protected_stop_count,
-        'ascended_hourly_ma_stop_count': ascended_hourly_ma_stop_count,
         'armed_flush_count': armed_flush_count,
         'armed_flush_ratio': armed_flush_count / trades_count,
+        'session_flat_exit_count': session_flat_exit_count,
+        'session_flat_exit_ratio': session_flat_exit_count / trades_count,
         'portfolio_halt_count': portfolio_halt_count,
         'session_restart_gap_exit_count': session_restart_gap_exit_count,
         'session_restart_gap_exit_ratio': session_restart_gap_exit_ratio,
@@ -141,10 +130,10 @@ def summarize_trades(trades: list[TradeRecord]) -> dict[str, float | int]:
 def collapse_portfolio_daily_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     collapsed: list[dict[str, str]] = []
     for row in rows:
-        date = normalize_optional(row.get('date'))
-        if not date:
+        trade_day = normalize_optional(row.get('date'))
+        if not trade_day:
             continue
-        if collapsed and normalize_optional(collapsed[-1].get('date')) == date:
+        if collapsed and normalize_optional(collapsed[-1].get('date')) == trade_day:
             latest = dict(row)
             latest['equity_start'] = collapsed[-1].get('equity_start', row.get('equity_start', ''))
             collapsed[-1] = latest
@@ -199,4 +188,4 @@ def summarize_backtest_run(
     return summary
 
 
-__all__ = ['summarize_backtest_run', 'summarize_portfolio_daily', 'summarize_trades']
+__all__ = ['collapse_portfolio_daily_rows', 'summarize_backtest_run', 'summarize_portfolio_daily', 'summarize_trades']

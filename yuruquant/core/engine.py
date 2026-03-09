@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import replace
 
@@ -7,7 +7,7 @@ from yuruquant.core.execution_diagnostics import build_execution_diagnostics
 from yuruquant.core.fill_policy import NextBarOpenFillPolicy
 from yuruquant.core.frames import SymbolFrames
 from yuruquant.core.models import BrokerGateway, EntrySignal, ExitSignal, FillPolicy, ReportSink, RuntimeState, Signal, SymbolRuntime
-from yuruquant.core.time import is_after, normalize_frequency, to_trade_day
+from yuruquant.core.time import is_after, normalize_frequency, to_exchange_trade_day
 from yuruquant.portfolio.accounting import modeled_portfolio_snapshot
 from yuruquant.portfolio.armed_exposure import check_entry_against_armed_risk_cap
 from yuruquant.portfolio.risk import evaluate_portfolio_guard
@@ -214,7 +214,7 @@ class StrategyEngine:
                     self._queue_signal(state, state.csymbol, symbol, signal)
 
         if self.config.reporting.enabled:
-            self.report_sink.record_portfolio_day(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, to_trade_day(current_eob), current_eob)
+            self.report_sink.record_portfolio_day(self.runtime, self.config.runtime.mode, self.config.runtime.run_id, to_exchange_trade_day(current_eob), current_eob)
 
         if state.bar_index_5m % 100 == 0:
             debug(
@@ -259,6 +259,7 @@ class StrategyEngine:
             if state is None:
                 continue
             self._process_symbol(state)
+
 
 
 

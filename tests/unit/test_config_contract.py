@@ -21,10 +21,11 @@ class ConfigContractTest(unittest.TestCase):
         self.assertEqual(config.strategy.entry.entry_block_major_gap_bars, 0)
         self.assertFalse(hasattr(config.strategy.entry, 'breakout_close_position_min'))
         self.assertEqual(config.strategy.exit.protected_activate_r, 1.2)
-        self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
+        self.assertFalse(hasattr(config.strategy.exit, 'ascended_activate_r'))
         self.assertEqual(config.strategy.exit.armed_flush_buffer_bars, 0)
         self.assertEqual(config.strategy.exit.armed_flush_min_gap_minutes, 180)
         self.assertEqual(config.strategy.exit.session_flat_all_phases_buffer_bars, 0)
+        self.assertEqual(config.strategy.exit.session_flat_scope, 'disabled')
         self.assertEqual(config.universe.warmup.entry_bars, 180)
         self.assertEqual(config.reporting.output_dir, 'reports')
         self.assertTrue(config.broker.gm.subscribe_wait_group)
@@ -73,10 +74,11 @@ observability:
         self.assertEqual(config.strategy.entry.entry_block_major_gap_bars, 0)
         self.assertFalse(hasattr(config.strategy.entry, 'breakout_close_position_min'))
         self.assertEqual(config.strategy.exit.protected_activate_r, 1.2)
-        self.assertEqual(config.strategy.exit.ascended_activate_r, 2.5)
+        self.assertFalse(hasattr(config.strategy.exit, 'ascended_activate_r'))
         self.assertEqual(config.strategy.exit.armed_flush_buffer_bars, 0)
         self.assertEqual(config.strategy.exit.armed_flush_min_gap_minutes, 180)
         self.assertEqual(config.strategy.exit.session_flat_all_phases_buffer_bars, 0)
+        self.assertEqual(config.strategy.exit.session_flat_scope, 'disabled')
         self.assertEqual(config.portfolio.risk_per_trade_ratio, 0.015)
         self.assertEqual(config.portfolio.max_total_armed_risk_ratio, 0.0)
 
@@ -101,8 +103,9 @@ observability:
             with self.assertRaises(ValueError):
                 load_config(path)
 
+
     def test_reject_removed_exit_keys(self):
-        text = """
+        template = """
 runtime:
   mode: BACKTEST
   run_id: demo
@@ -120,7 +123,7 @@ strategy:
   environment: {}
   entry: {}
   exit:
-    trend_ride_activate_r: 2.5
+    {key}: 2.5
 portfolio:
   max_daily_loss_ratio: 0.05
   max_drawdown_halt_ratio: 0.15
@@ -132,11 +135,13 @@ reporting:
 observability:
   level: WARN
 """
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / 'bad_exit.yaml'
-            path.write_text(text, encoding='utf-8')
-            with self.assertRaises(ValueError):
-                load_config(path)
+        for key in ('trend_ride_activate_r', 'ascended_activate_r'):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    path = Path(temp_dir) / 'bad_exit.yaml'
+                    path.write_text(template.replace('{key}', key), encoding='utf-8')
+                    with self.assertRaises(ValueError):
+                        load_config(path)
 
     def test_reject_removed_close_position_key(self):
         text = """
@@ -322,6 +327,43 @@ observability:
 """
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / 'bad_session_flat.yaml'
+            path.write_text(text, encoding='utf-8')
+            with self.assertRaises(ValueError):
+                load_config(path)
+
+    def test_reject_invalid_session_flat_scope(self):
+        text = """
+runtime:
+  mode: BACKTEST
+  run_id: demo
+broker:
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    backtest:
+      start: "2025-01-01 00:00:00"
+      end: "2025-01-31 15:00:00"
+universe:
+  symbols: [DCE.P]
+strategy:
+  environment: {}
+  entry: {}
+  exit:
+    session_flat_scope: every_boundary
+portfolio:
+  max_daily_loss_ratio: 0.05
+  max_drawdown_halt_ratio: 0.15
+execution:
+  backtest_commission_ratio: 0.001
+  backtest_slippage_ratio: 0.002
+reporting:
+  enabled: true
+observability:
+  level: WARN
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / 'bad_session_flat_scope.yaml'
             path.write_text(text, encoding='utf-8')
             with self.assertRaises(ValueError):
                 load_config(path)
