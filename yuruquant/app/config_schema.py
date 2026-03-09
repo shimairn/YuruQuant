@@ -50,14 +50,18 @@ class UniverseConfig:
     warmup: WarmupConfig
     instrument_defaults: InstrumentSpec
     instrument_overrides: dict[str, InstrumentSpec]
+    risk_clusters: dict[str, tuple[str, ...]]
 
 
 @dataclass
 class EnvironmentConfig:
+    mode: str
     ma_period: int
     macd_fast: int
     macd_slow: int
     macd_signal: int
+    tsmom_lookbacks: tuple[int, ...]
+    tsmom_min_agree: int
 
 
 @dataclass
@@ -86,12 +90,22 @@ class StrategyConfig:
     exit: ExitConfig
 
 
+@dataclass(frozen=True)
+class RiskThrottleStep:
+    drawdown_ratio: float
+    risk_mult: float
+
+
 @dataclass
 class PortfolioConfig:
     risk_per_trade_ratio: float
     max_total_armed_risk_ratio: float
+    max_cluster_armed_risk_ratio: float
+    max_same_direction_cluster_positions: int
     max_daily_loss_ratio: float
     max_drawdown_halt_ratio: float
+    drawdown_halt_mode: str
+    drawdown_risk_schedule: tuple[RiskThrottleStep, ...]
 
 
 @dataclass
@@ -139,6 +153,7 @@ __all__ = [
     'GMConfig',
     'ObservabilityConfig',
     'PortfolioConfig',
+    'RiskThrottleStep',
     'ReportingConfig',
     'RuntimeConfig',
     'StrategyConfig',

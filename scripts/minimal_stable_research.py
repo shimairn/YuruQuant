@@ -2,14 +2,11 @@
 
 import argparse
 import csv
-import subprocess
 import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -17,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from yuruquant.app.config_loader import load_config
 from yuruquant.app.config_schema import AppConfig
+from yuruquant.research.workflows import build_multiplier_lookup, load_yaml, reports_exist, run_backtest, write_yaml
 from yuruquant.reporting.diagnostics import build_trade_diagnostics, write_trade_diagnostics_csv
 from yuruquant.reporting.summary import summarize_backtest_run
 from yuruquant.reporting.trade_records import build_trade_records
@@ -65,30 +63,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--keep-configs', action='store_true')
     parser.add_argument('--skip-control', action='store_true')
     return parser.parse_args()
-
-
-def load_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding='utf-8')) or {}
-
-
-def write_yaml(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding='utf-8')
-
-
-def reports_exist(output_dir: Path) -> bool:
-    return all((output_dir / name).exists() for name in ('signals.csv', 'executions.csv', 'portfolio_daily.csv'))
-
-
-def build_multiplier_lookup(config: AppConfig) -> dict[str, float]:
-    multipliers = {csymbol: config.universe.instrument_defaults.multiplier for csymbol in config.universe.symbols}
-    multipliers.update({csymbol: spec.multiplier for csymbol, spec in config.universe.instrument_overrides.items()})
-    return multipliers
-
-
-def run_backtest(python_exe: str, config_path: Path, run_id: str) -> None:
-    subprocess.run([python_exe, str(REPO_ROOT / 'main.py'), '--mode', 'BACKTEST', '--config', str(config_path), '--run-id', run_id], cwd=str(REPO_ROOT), check=True)
-
 
 def apply_candidate_overrides(payload: dict[str, Any], profile: RiskProfile) -> None:
     payload.setdefault('strategy', {})
@@ -238,7 +212,7 @@ def main() -> int:
         run_id = str(payload.get('runtime', {}).get('run_id') or profile.label)
         print(f'[{index}/{total}] {profile.label}: risk={config.portfolio.risk_per_trade_ratio:.3f}, cap={config.portfolio.max_total_armed_risk_ratio:.3f}')
         if args.force or not reports_exist(output_dir):
-            run_backtest(args.python_exe, config_path, run_id)
+            run_backtest(REPO_ROOT, args.python_exe, config_path, run_id)
         else:
             print(f'  skipping existing raw reports at {output_dir.as_posix()}')
         rows.append(collect_summary(profile, config, output_dir, multiplier_lookup))

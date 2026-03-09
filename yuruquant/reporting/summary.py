@@ -3,7 +3,8 @@
 from pathlib import Path
 from typing import Mapping
 
-from yuruquant.reporting.trade_records import TradeRecord, build_trade_records, load_csv_rows, normalize_optional, to_float
+from yuruquant.reporting.csv_utils import load_csv_rows, normalize_optional, to_float
+from yuruquant.reporting.trade_records import TradeRecord, build_trade_records
 
 
 def overshoot_stats(trades: list[TradeRecord], trigger: str) -> tuple[float, float]:
@@ -181,6 +182,7 @@ def summarize_backtest_run(
     multiplier_by_csymbol: Mapping[str, float],
     executions_path: Path | None = None,
 ) -> dict[str, float | int]:
+    # Portfolio daily stays the GM truth layer. Trade summaries remain structural diagnostics.
     trades = build_trade_records(signals_path, multiplier_by_csymbol, executions_path)
     summary: dict[str, float | int] = {}
     summary.update(summarize_trades(trades))

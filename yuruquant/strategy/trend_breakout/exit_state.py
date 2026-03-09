@@ -34,10 +34,9 @@ def build_managed_position(signal: EntrySignal, fill_price: float | None = None,
     )
 
 
-def compute_exit_pnl(position: ManagedPosition, current_price: float, multiplier: float, cost_ratio: float) -> tuple[float, float]:
+def compute_exit_pnl(position: ManagedPosition, current_price: float, multiplier: float) -> tuple[float, float]:
     gross = (float(current_price) - position.entry_price) * position.direction * multiplier * position.qty
-    turnover = (abs(position.entry_price) + abs(float(current_price))) * multiplier * position.qty
-    net = gross - turnover * max(float(cost_ratio), 0.0)
+    net = gross
     return float(gross), float(net)
 
 
@@ -107,8 +106,8 @@ def _should_flush_armed_position(config: AppConfig, position: ManagedPosition, s
     )
 
 
-def _make_exit_signal(position: ManagedPosition, action: str, reason: str, trigger: str, current_price: float, current_eob: object, multiplier: float, cost_ratio: float) -> ExitSignal:
-    gross, net = compute_exit_pnl(position, current_price, multiplier, cost_ratio)
+def _make_exit_signal(position: ManagedPosition, action: str, reason: str, trigger: str, current_price: float, current_eob: object, multiplier: float) -> ExitSignal:
+    gross, net = compute_exit_pnl(position, current_price, multiplier)
     return ExitSignal(
         action=action,
         reason=reason,
@@ -134,8 +133,9 @@ def evaluate_exit_signal(
     current_eob: object,
     spec: InstrumentSpec,
     multiplier: float,
-    cost_ratio: float,
+    cost_ratio: float | None = None,
 ) -> ExitSignal | None:
+    _ = cost_ratio
     if frame_5m.empty_frame:
         return None
     current_price = _update_position(position, frame_5m)
@@ -143,14 +143,14 @@ def evaluate_exit_signal(
     action = 'close_long' if position.direction > 0 else 'close_short'
     trigger = _stop_trigger(position, current_price, environment)
     if trigger is not None:
-        return _make_exit_signal(position, action, trigger.replace('_', ' '), trigger, current_price, current_eob, multiplier, cost_ratio)
+        return _make_exit_signal(position, action, trigger.replace('_', ' '), trigger, current_price, current_eob, multiplier)
     if _should_flatten_by_session_end(config, spec, current_eob):
-        return _make_exit_signal(position, action, 'session flat', SESSION_FLAT_TRIGGER, current_price, current_eob, multiplier, cost_ratio)
+        return _make_exit_signal(position, action, 'session flat', SESSION_FLAT_TRIGGER, current_price, current_eob, multiplier)
     if _should_flush_armed_position(config, position, spec, current_eob):
-        return _make_exit_signal(position, action, 'armed flush', ARMED_FLUSH_TRIGGER, current_price, current_eob, multiplier, cost_ratio)
+        return _make_exit_signal(position, action, 'armed flush', ARMED_FLUSH_TRIGGER, current_price, current_eob, multiplier)
     return None
 
 
-def make_flatten_signal(position: ManagedPosition, current_price: float, current_eob: object, multiplier: float, cost_ratio: float, reason: str) -> ExitSignal:
+def make_flatten_signal(position: ManagedPosition, current_price: float, current_eob: object, multiplier: float, reason: str) -> ExitSignal:
     action = 'close_long' if position.direction > 0 else 'close_short'
-    return _make_exit_signal(position, action, reason, 'portfolio_halt', current_price, current_eob, multiplier, cost_ratio)
+    return _make_exit_signal(position, action, reason, 'portfolio_halt', current_price, current_eob, multiplier)

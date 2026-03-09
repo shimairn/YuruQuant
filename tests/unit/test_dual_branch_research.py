@@ -17,8 +17,9 @@ SPEC.loader.exec_module(MODULE)
 
 class DualBranchResearchScriptTest(unittest.TestCase):
     def test_trend_branch_payload_uses_15m_identity_settings(self):
+        base_payload = MODULE.load_yaml(REPO_ROOT / 'config' / 'liquid_top10_dual_core.yaml')
         payload = MODULE.build_run_payload(
-            MODULE.load_yaml(REPO_ROOT / 'config' / 'liquid_top10_dual_core.yaml'),
+            base_payload,
             MODULE.TREND_BRANCH,
             MODULE.RISK_PROFILES[0],
             REPO_ROOT / 'reports' / 'tmp_trend',
@@ -33,8 +34,8 @@ class DualBranchResearchScriptTest(unittest.TestCase):
         self.assertNotIn('ascended_activate_r', payload['strategy']['exit'])
         self.assertAlmostEqual(0.012, payload['portfolio']['risk_per_trade_ratio'])
         self.assertAlmostEqual(0.024, payload['portfolio']['max_total_armed_risk_ratio'])
-        self.assertAlmostEqual(0.0, payload['execution']['backtest_commission_ratio'])
-        self.assertAlmostEqual(0.0, payload['execution']['backtest_slippage_ratio'])
+        self.assertAlmostEqual(base_payload['execution']['backtest_commission_ratio'], payload['execution']['backtest_commission_ratio'])
+        self.assertAlmostEqual(base_payload['execution']['backtest_slippage_ratio'], payload['execution']['backtest_slippage_ratio'])
 
     def test_intraday_branch_payload_uses_session_flat_settings(self):
         payload = MODULE.build_run_payload(
@@ -52,20 +53,17 @@ class DualBranchResearchScriptTest(unittest.TestCase):
         self.assertAlmostEqual(0.030, payload['portfolio']['max_total_armed_risk_ratio'])
 
 
-    def test_cost_assumptions_make_raw_and_overlay_explicit(self):
+    def test_cost_assumptions_make_gm_builtin_explicit(self):
         config = MODULE.load_config(REPO_ROOT / 'config' / 'liquid_top10_dual_core.yaml')
-        profile_rows = MODULE.load_cost_profile(MODULE.REALISTIC_COST_PROFILE_PATH)
-        rows = MODULE.build_cost_assumption_rows(config, MODULE.REALISTIC_COST_PROFILE_PATH, profile_rows)
+        rows = MODULE.build_cost_assumption_rows(config)
 
-        raw_row = next(row for row in rows if row['cost_profile'] == 'raw_fill_capture')
-        realistic_ag = next(row for row in rows if row['cost_profile'] == 'realistic_top10_v1' and row['csymbol'] == 'SHFE.AG')
-
-        self.assertAlmostEqual(0.0, float(raw_row['commission_ratio_applied']))
-        self.assertAlmostEqual(0.0, float(raw_row['slippage_ratio_applied']))
-        self.assertEqual('all', raw_row['scope'].lower())
-        self.assertGreater(float(realistic_ag['commission_ratio_applied']), 0.0)
-        self.assertGreater(float(realistic_ag['slippage_ticks_per_side']), 0.0)
-        self.assertIn('research/cost_profiles/realistic_top10_v1.csv', realistic_ag['profile_path'])
+        self.assertEqual(1, len(rows))
+        gm_row = rows[0]
+        self.assertEqual(MODULE.GM_BUILTIN_COST_PROFILE, gm_row['cost_profile'])
+        self.assertEqual('all', gm_row['scope'].lower())
+        self.assertAlmostEqual(config.execution.backtest_commission_ratio, float(gm_row['commission_ratio_applied']))
+        self.assertAlmostEqual(config.execution.backtest_slippage_ratio, float(gm_row['slippage_ratio_applied']))
+        self.assertEqual('', gm_row['profile_path'])
 
     def test_gate_status_matches_branch_specific_thresholds(self):
         trend_ok, trend_status = MODULE.gate_status(

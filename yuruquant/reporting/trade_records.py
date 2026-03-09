@@ -1,9 +1,10 @@
 ﻿from __future__ import annotations
 
-import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
+
+from yuruquant.reporting.csv_utils import load_csv_rows, normalize_optional, to_float, to_int
 
 
 TRADE_DIAGNOSTIC_COLUMNS = [
@@ -68,33 +69,8 @@ class TradeRecord:
     exit_fill_gap_atr: float
 
 
-def to_float(value: object, default: float = 0.0) -> float:
-    try:
-        text = '' if value is None else str(value).strip()
-        return float(text) if text else default
-    except Exception:
-        return default
-
-
-def to_int(value: object, default: int = 0) -> int:
-    try:
-        text = '' if value is None else str(value).strip()
-        return int(float(text)) if text else default
-    except Exception:
-        return default
-
-
-def normalize_optional(value: object) -> str:
-    return '' if value is None else str(value).strip()
-
-
 def is_accepted(value: object) -> bool:
     return normalize_optional(value).lower() in {'1', 'true', 'yes'}
-
-
-def load_csv_rows(path: Path) -> list[dict[str, str]]:
-    with path.open('r', newline='', encoding='utf-8-sig') as handle:
-        return list(csv.DictReader(handle))
 
 
 def realized_stop_prices(entry_signal_price: float, entry_fill_price: float, initial_stop_loss: float, protected_stop_price: float) -> tuple[float, float]:

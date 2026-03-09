@@ -1,15 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
-import csv
-import subprocess
 import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -17,13 +13,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from yuruquant.app.config_loader import load_config
 from yuruquant.app.config_schema import AppConfig
+from yuruquant.research.workflows import build_multiplier_lookup, load_yaml, reports_exist, run_backtest, write_rows_csv, write_yaml
 from yuruquant.reporting.cost_overlay import (
     COSTED_TRADE_DIAGNOSTIC_COLUMNS,
     PORTFOLIO_DAILY_COSTED_COLUMNS,
     SUMMARY_COSTED_COLUMNS,
     SYMBOL_COST_DRAG_COLUMNS,
-    apply_cost_overlay,
-    load_cost_profile,
+    build_platform_cost_report,
     write_csv,
 )
 from yuruquant.reporting.summary import summarize_backtest_run
@@ -31,9 +27,7 @@ from yuruquant.reporting.trade_records import TradeRecord, build_trade_records
 
 
 DEFAULT_PYTHON_EXE = r'C:\Users\wuktt\miniconda3\envs\minner\python.exe'
-RAW_NEUTRAL_COMMISSION_RATIO = 0.0
-RAW_NEUTRAL_SLIPPAGE_RATIO = 0.0
-REALISTIC_COST_PROFILE_PATH = REPO_ROOT / 'research' / 'cost_profiles' / 'realistic_top10_v1.csv'
+GM_BUILTIN_COST_PROFILE = 'gm_builtin_unified'
 RAW_SUMMARY_COLUMNS = [
     'branch', 'risk_label', 'entry_frequency', 'trend_frequency', 'donchian_lookback',
     'risk_per_trade_ratio', 'max_total_armed_risk_ratio', 'trades', 'wins', 'losses',
@@ -114,7 +108,7 @@ RISK_PROFILES = (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Run dual-branch effectiveness research with research-side cost overlays.')
+    parser = argparse.ArgumentParser(description='Run dual-branch effectiveness research with GM built-in commission/slippage.')
     parser.add_argument('--base-config', default='config/liquid_top10_dual_core.yaml')
     parser.add_argument('--python-exe', default=DEFAULT_PYTHON_EXE)
     parser.add_argument('--output-root', default='reports/dual_branch_effectiveness_v3')
@@ -124,54 +118,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--keep-configs', action='store_true')
     return parser.parse_args()
 
-
-def load_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding='utf-8')) or {}
-
-
-def write_yaml(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding='utf-8')
-
-
-def reports_exist(output_dir: Path) -> bool:
-    return all((output_dir / name).exists() for name in ('signals.csv', 'executions.csv', 'portfolio_daily.csv'))
-
-
-def write_rows_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({name: row.get(name, '') for name in fieldnames})
-
-
-def _relative_path(path: Path) -> str:
-    try:
-        return path.resolve().relative_to(REPO_ROOT).as_posix()
-    except Exception:
-        return path.as_posix()
-
-
-def build_cost_assumption_rows(reference_config: AppConfig, profile_path: Path, realistic_costs: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = [
+def build_cost_assumption_rows(reference_config: AppConfig) -> list[dict[str, Any]]:
+    return [
         {
-            'model_layer': 'raw_run',
-            'cost_profile': 'raw_fill_capture',
-            'scope': 'ALL',
-            'csymbol': '*',
-            'profile_path': '',
-            'commission_ratio_applied': RAW_NEUTRAL_COMMISSION_RATIO,
-            'slippage_ratio_applied': RAW_NEUTRAL_SLIPPAGE_RATIO,
-            'slippage_ticks_per_side': '',
-            'source_url': '',
-            'as_of_date': '',
-            'notes': 'Raw backtest runs use 0 commission and 0 slippage to capture fills; acceptance is based on summary_costed.csv, not summary_raw.csv.',
-        },
-        {
-            'model_layer': 'research_overlay',
-            'cost_profile': 'current_high_cost',
+            'model_layer': 'gm_backtest',
+            'cost_profile': GM_BUILTIN_COST_PROFILE,
             'scope': 'ALL',
             'csymbol': '*',
             'profile_path': '',
@@ -180,55 +131,29 @@ def build_cost_assumption_rows(reference_config: AppConfig, profile_path: Path, 
             'slippage_ticks_per_side': '',
             'source_url': '',
             'as_of_date': '',
-            'notes': 'Reference stress overlay from base config execution.backtest_commission_ratio and execution.backtest_slippage_ratio, both applied to round-trip turnover.',
+            'notes': 'Commission and slippage are configured once via gm.api.run backtest parameters; no research-side overlay is applied.',
         },
     ]
-    for csymbol, row in sorted(realistic_costs.items()):
-        rows.append(
-            {
-                'model_layer': 'research_overlay',
-                'cost_profile': 'realistic_top10_v1',
-                'scope': 'PER_SYMBOL',
-                'csymbol': csymbol,
-                'profile_path': _relative_path(profile_path),
-                'commission_ratio_applied': float(getattr(row, 'commission_ratio_per_side', 0.0) or 0.0),
-                'slippage_ratio_applied': '',
-                'slippage_ticks_per_side': float(getattr(row, 'slippage_ticks_per_side', 0.0) or 0.0),
-                'source_url': getattr(row, 'source_url', ''),
-                'as_of_date': getattr(row, 'as_of_date', ''),
-                'notes': getattr(row, 'notes', ''),
-            }
-        )
-    return rows
 
 
-def write_cost_model(path: Path, reference_config: AppConfig, profile_path: Path, realistic_costs: dict[str, Any]) -> None:
+def write_cost_model(path: Path, reference_config: AppConfig) -> None:
     lines = [
         '# Cost Model',
         '',
-        '- `summary_raw.csv` reflects fill capture only; raw runs intentionally use zero commission and zero slippage.',
-        '- `summary_costed.csv` is the acceptance surface; all net-return, drawdown, and halt conclusions come from research-side overlays.',
-        f"- `current_high_cost` uses round-trip turnover ratios from the base config: commission `{float(reference_config.execution.backtest_commission_ratio):.6f}`, slippage `{float(reference_config.execution.backtest_slippage_ratio):.6f}`.",
-        f"- `realistic_top10_v1` loads per-symbol fees from `{_relative_path(profile_path)}` for `{len(realistic_costs)}` symbols.",
-        '- `realistic_top10_v1` commission is modeled as per-side ratio on each leg; slippage is modeled as ticks per side times min tick times multiplier times quantity times 2.',
-        '- Read `cost_assumptions.csv` for the exact applied values and source links.',
-        '- `summary_costed.csv` exposes total turnover, gross PnL, commission, slippage, total cost, net PnL, and cost ratios at the run level.',
-        '- `portfolio_daily_costed.csv` exposes daily and cumulative commission, slippage, total cost, turnover, gross PnL, and net PnL.',
-        '- `trade_diagnostics_costed.csv` and `symbol_cost_drag.csv` expose per-trade and per-symbol turnover plus explicit cost attribution.',
+        '- `summary_raw.csv` and `summary_costed.csv` both come from the same GM backtest run.',
+        f"- GM is configured once with commission `{float(reference_config.execution.backtest_commission_ratio):.6f}` and slippage `{float(reference_config.execution.backtest_slippage_ratio):.6f}`.",
+        '- This script no longer forces `0/0` raw runs and no longer applies any local fee/slippage overlay.',
+        '- `summary_costed.csv`, `portfolio_daily_costed.csv`, `trade_diagnostics_costed.csv`, and `symbol_cost_drag.csv` are compatibility reports under `gm_builtin_unified`.',
+        '- Explicit per-trade commission and slippage attribution is not reconstructed locally; those columns remain zero in compatibility outputs.',
+        '- Use the GM backtest UI/report as the authoritative cost ledger when auditing fee and slippage drag.',
         '',
         '## Decision Rule',
         '',
-        '- Ignore `summary_raw.csv` for promotion decisions.',
-        '- Use `summary_costed.csv`, `portfolio_daily_costed.csv`, `trade_diagnostics_costed.csv`, and `symbol_cost_drag.csv` as the decision set.',
+        '- Promotion decisions use the GM-configured `net_return_ratio`, `max_drawdown`, and halt metrics.',
+        '- Trade-structure diagnostics continue to come from local trade reconstruction, without any extra cost overlay.',
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
-
-def run_backtest(python_exe: str, config_path: Path, run_id: str) -> None:
-    command = [python_exe, str(REPO_ROOT / 'main.py'), '--mode', 'BACKTEST', '--config', str(config_path), '--run-id', run_id]
-    subprocess.run(command, cwd=str(REPO_ROOT), check=True)
-
 
 def build_run_payload(base_payload: dict[str, Any], branch: BranchSpec, risk: RiskProfile, output_dir: Path) -> dict[str, Any]:
     payload = deepcopy(base_payload)
@@ -252,17 +177,8 @@ def build_run_payload(base_payload: dict[str, Any], branch: BranchSpec, risk: Ri
     payload['strategy']['exit']['session_flat_scope'] = str(branch.session_flat_scope)
     payload['portfolio']['risk_per_trade_ratio'] = float(risk.risk_per_trade_ratio)
     payload['portfolio']['max_total_armed_risk_ratio'] = float(risk.max_total_armed_risk_ratio)
-    payload['execution']['backtest_commission_ratio'] = RAW_NEUTRAL_COMMISSION_RATIO
-    payload['execution']['backtest_slippage_ratio'] = RAW_NEUTRAL_SLIPPAGE_RATIO
     payload['reporting']['output_dir'] = output_dir.as_posix()
     return payload
-
-
-def build_multiplier_lookup(config: AppConfig) -> dict[str, float]:
-    multipliers = {csymbol: config.universe.instrument_defaults.multiplier for csymbol in config.universe.symbols}
-    multipliers.update({csymbol: spec.multiplier for csymbol, spec in config.universe.instrument_overrides.items()})
-    return multipliers
-
 
 def collect_raw_summary(branch: BranchSpec, risk: RiskProfile, config: AppConfig, output_dir: Path) -> tuple[dict[str, Any], list[TradeRecord]]:
     signals_path = output_dir / 'signals.csv'
@@ -338,45 +254,46 @@ def order_costed_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def write_run_decision(path: Path, branch: BranchSpec, risk: RiskProfile, rows: list[dict[str, Any]]) -> None:
-    realistic_row = next((row for row in rows if row.get('cost_profile') == 'realistic_top10_v1'), None)
+    platform_row = next((row for row in rows if row.get('cost_profile') == GM_BUILTIN_COST_PROFILE), None)
     lines = [
         '# Run Decision',
         '',
         f'- branch: `{branch.label}`',
         f'- risk_label: `{risk.label}`',
     ]
-    if realistic_row is not None:
+    if platform_row is not None:
         lines.extend([
-            f"- realistic_gate_status: `{realistic_row.get('gate_status', 'n/a')}`",
-            f"- realistic_stability_status: `{realistic_row.get('stability_status', 'n/a')}`",
-            f"- realistic_net_return_ratio: `{float(realistic_row.get('net_return_ratio', 0.0)):.4f}`",
-            f"- realistic_total_cost: `{float(realistic_row.get('total_cost', 0.0)):.2f}`",
-            f"- realistic_cost_to_turnover_ratio: `{float(realistic_row.get('cost_to_turnover_ratio', 0.0)):.4%}`",
-            f"- realistic_max_drawdown: `{float(realistic_row.get('max_drawdown', 0.0)):.4f}`",
+            f"- gate_status: `{platform_row.get('gate_status', 'n/a')}`",
+            f"- stability_status: `{platform_row.get('stability_status', 'n/a')}`",
+            f"- net_return_ratio: `{float(platform_row.get('net_return_ratio', 0.0)):.4f}`",
+            f"- max_drawdown: `{float(platform_row.get('max_drawdown', 0.0)):.4f}`",
+            f"- total_cost_local: `{float(platform_row.get('total_cost', 0.0)):.2f}`",
+            '- note: `commission/slippage are sourced from GM; local explicit cost attribution is disabled`',
         ])
     lines.extend([
         '',
         '## Cost Profiles',
         '',
-        '| cost_profile | gate | stability | gross_pnl | total_cost | net_pnl | max_drawdown | protected | overnight | day_flat |',
-        '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+        '| cost_profile | gate | stability | net_pnl | max_drawdown | protected | overnight | day_flat |',
+        '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |',
     ])
     for row in rows:
         lines.append(
-            f"| {row['cost_profile']} | {row.get('gate_status', 'n/a')} | {row.get('stability_status', 'n/a')} | {float(row.get('gross_pnl', 0.0)):.2f} | {float(row.get('total_cost', 0.0)):.2f} | {float(row.get('net_pnl', 0.0)):.2f} | {float(row.get('max_drawdown', 0.0)):.4f} | {int(row.get('protected_reach_count', 0) or 0)} | {int(row.get('overnight_hold_count', 0) or 0)} | {int(row.get('trading_day_flat_exit_count', 0) or 0)} |"
+            f"| {row['cost_profile']} | {row.get('gate_status', 'n/a')} | {row.get('stability_status', 'n/a')} | {float(row.get('net_pnl', 0.0)):.2f} | {float(row.get('max_drawdown', 0.0)):.4f} | {int(row.get('protected_reach_count', 0) or 0)} | {int(row.get('overnight_hold_count', 0) or 0)} | {int(row.get('trading_day_flat_exit_count', 0) or 0)} |"
         )
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
 def write_branch_decision(path: Path, branch: BranchSpec, costed_rows: list[dict[str, Any]]) -> None:
-    realistic_rows = [row for row in costed_rows if row.get('cost_profile') == 'realistic_top10_v1']
-    ordered = sorted(realistic_rows, key=lambda row: (-int(bool(row.get('gate_passed', 0))), float(row.get('top_symbol_pnl_share', 9.0) or 9.0), -float(row.get('net_return_ratio', -1.0) or -1.0), float(row.get('max_drawdown', 1.0) or 1.0), row.get('risk_label', '')))
+    platform_rows = [row for row in costed_rows if row.get('cost_profile') == GM_BUILTIN_COST_PROFILE]
+    ordered = sorted(platform_rows, key=lambda row: (-int(bool(row.get('gate_passed', 0))), float(row.get('top_symbol_pnl_share', 9.0) or 9.0), -float(row.get('net_return_ratio', -1.0) or -1.0), float(row.get('max_drawdown', 1.0) or 1.0), row.get('risk_label', '')))
     best = ordered[0] if ordered else None
     lines = [
         '# Branch Decision',
         '',
         f'- branch: `{branch.label}`',
         f"- research_status: `{branch_decision_status(best) if best is not None else 'not_proven'}`",
+        f"- cost_profile: `{GM_BUILTIN_COST_PROFILE}`",
     ]
     if best is not None:
         lines.extend([
@@ -384,28 +301,26 @@ def write_branch_decision(path: Path, branch: BranchSpec, costed_rows: list[dict
             f"- best_gate_status: `{best['gate_status']}`",
             f"- best_stability_status: `{best.get('stability_status', 'n/a')}`",
             f"- best_net_return_ratio: `{float(best.get('net_return_ratio', 0.0)):.4f}`",
-            f"- best_total_cost: `{float(best.get('total_cost', 0.0)):.2f}`",
-            f"- best_cost_to_turnover_ratio: `{float(best.get('cost_to_turnover_ratio', 0.0)):.4%}`",
             f"- best_max_drawdown: `{float(best.get('max_drawdown', 0.0)):.4f}`",
             f"- best_top_symbol_pnl_share: `{float(best.get('top_symbol_pnl_share', 0.0)):.4f}`",
         ])
     lines.extend([
         '',
-        '## Realistic Cost Results',
+        '## GM Built-in Cost Results',
         '',
-        '| risk_label | gate | stability | gross_pnl | total_cost | net_pnl | max_drawdown | protected | overnight | day_flat | top_share |',
-        '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+        '| risk_label | gate | stability | net_pnl | max_drawdown | protected | overnight | day_flat | top_share |',
+        '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
     ])
     for row in ordered:
         lines.append(
-            f"| {row['risk_label']} | {row['gate_status']} | {row.get('stability_status', 'n/a')} | {float(row.get('gross_pnl', 0.0)):.2f} | {float(row.get('total_cost', 0.0)):.2f} | {float(row.get('net_pnl', 0.0)):.2f} | {float(row.get('max_drawdown', 0.0)):.4f} | {int(row.get('protected_reach_count', 0) or 0)} | {int(row.get('overnight_hold_count', 0) or 0)} | {int(row.get('trading_day_flat_exit_count', 0) or 0)} | {float(row.get('top_symbol_pnl_share', 0.0)):.4f} |"
+            f"| {row['risk_label']} | {row['gate_status']} | {row.get('stability_status', 'n/a')} | {float(row.get('net_pnl', 0.0)):.2f} | {float(row.get('max_drawdown', 0.0)):.4f} | {int(row.get('protected_reach_count', 0) or 0)} | {int(row.get('overnight_hold_count', 0) or 0)} | {int(row.get('trading_day_flat_exit_count', 0) or 0)} | {float(row.get('top_symbol_pnl_share', 0.0)):.4f} |"
         )
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
 def write_root_decision(path: Path, costed_rows: list[dict[str, Any]]) -> None:
-    realistic_rows = [row for row in costed_rows if row.get('cost_profile') == 'realistic_top10_v1']
-    passed_rows = [row for row in realistic_rows if int(row.get('gate_passed', 0) or 0) == 1]
+    platform_rows = [row for row in costed_rows if row.get('cost_profile') == GM_BUILTIN_COST_PROFILE]
+    passed_rows = [row for row in platform_rows if int(row.get('gate_passed', 0) or 0) == 1]
     balanced_rows = [row for row in passed_rows if row.get('stability_status') != 'concentration_fragile']
     verdict = 'at_least_one_branch_candidate' if balanced_rows else ('concentration_fragile' if passed_rows else 'breakout_family_not_proven')
     lines = [
@@ -413,22 +328,22 @@ def write_root_decision(path: Path, costed_rows: list[dict[str, Any]]) -> None:
         '',
         '- default_runtime_change: `none`',
         '- strategy_upgrade: `deferred`',
-        '- cost_model: `raw_fill_capture_plus_research_overlay`',
+        '- cost_model: `gm_builtin_unified_from_gm`',
         '- universe_policy: `shared_pool_across_branches`',
         f"- verdict: `{verdict}`",
         '- note: `this run keeps two explicit mainlines; intraday is 5m only, trend is 15m only`',
         '',
         '## Branch Snapshot',
         '',
-        '| branch | risk_label | gate | stability | net_return | total_cost | max_drawdown | top_share | cost_profile |',
-        '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |',
+        '| branch | risk_label | gate | stability | net_return | max_drawdown | top_share | cost_profile |',
+        '| --- | --- | --- | --- | ---: | ---: | ---: | --- |',
     ]
     for branch in BRANCHES:
-        branch_rows = [row for row in realistic_rows if row.get('branch') == branch.label]
+        branch_rows = [row for row in platform_rows if row.get('branch') == branch.label]
         branch_rows.sort(key=lambda row: (-int(bool(row.get('gate_passed', 0))), float(row.get('top_symbol_pnl_share', 9.0) or 9.0), -float(row.get('net_return_ratio', -1.0) or -1.0), float(row.get('max_drawdown', 1.0) or 1.0), row.get('risk_label', '')))
         if branch_rows:
             row = branch_rows[0]
-            lines.append(f"| {row['branch']} | {row['risk_label']} | {row['gate_status']} | {row.get('stability_status', 'n/a')} | {float(row.get('net_return_ratio', 0.0)):.4f} | {float(row.get('total_cost', 0.0)):.2f} | {float(row.get('max_drawdown', 0.0)):.4f} | {float(row.get('top_symbol_pnl_share', 0.0)):.4f} | {row['cost_profile']} |")
+            lines.append(f"| {row['branch']} | {row['risk_label']} | {row['gate_status']} | {row.get('stability_status', 'n/a')} | {float(row.get('net_return_ratio', 0.0)):.4f} | {float(row.get('max_drawdown', 0.0)):.4f} | {float(row.get('top_symbol_pnl_share', 0.0)):.4f} | {row['cost_profile']} |")
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -436,12 +351,12 @@ def print_summary(raw_rows: list[dict[str, Any]], costed_rows: list[dict[str, An
     print('raw summary')
     for row in raw_rows:
         print(f"  {row['branch']:14s} {row['risk_label']:10s} return={float(row.get('return_ratio', 0.0))*100:7.2f}% max_dd={float(row.get('max_drawdown', 0.0))*100:6.2f}% trades={int(row.get('trades', 0) or 0):2d}")
-    print('costed summary (realistic_top10_v1)')
-    for row in order_costed_rows([item for item in costed_rows if item.get('cost_profile') == 'realistic_top10_v1']):
+    print(f'costed summary ({GM_BUILTIN_COST_PROFILE})')
+    for row in order_costed_rows([item for item in costed_rows if item.get('cost_profile') == GM_BUILTIN_COST_PROFILE]):
         print(
             f"  {row['branch']:14s} {row['risk_label']:10s} gate={row['gate_status']:24s} stability={row.get('stability_status', 'n/a'):22s} "
             f"net={float(row.get('net_return_ratio', 0.0))*100:7.2f}% max_dd={float(row.get('max_drawdown', 0.0))*100:6.2f}% "
-            f"cost={float(row.get('total_cost', 0.0)):10.2f} turnover_drag={float(row.get('cost_to_turnover_ratio', 0.0))*100:6.2f}%"
+            f"top_share={float(row.get('top_symbol_pnl_share', 0.0))*100:6.2f}%"
         )
 
 
@@ -452,12 +367,11 @@ def main() -> int:
     configs_dir = output_root / 'configs'
     base_payload = load_yaml(base_config_path)
     reference_config = load_config(base_config_path)
-    realistic_costs = load_cost_profile(REALISTIC_COST_PROFILE_PATH)
     selected_branches = [branch for branch in BRANCHES if args.branch is None or branch.label == args.branch]
     selected_risks = [risk for risk in RISK_PROFILES if args.risk_label is None or risk.label == args.risk_label]
-    cost_assumption_rows = build_cost_assumption_rows(reference_config, REALISTIC_COST_PROFILE_PATH, realistic_costs)
+    cost_assumption_rows = build_cost_assumption_rows(reference_config)
     write_rows_csv(output_root / 'cost_assumptions.csv', COST_ASSUMPTION_COLUMNS, cost_assumption_rows)
-    write_cost_model(output_root / 'cost_model.md', reference_config, REALISTIC_COST_PROFILE_PATH, realistic_costs)
+    write_cost_model(output_root / 'cost_model.md', reference_config)
 
     all_raw_rows: list[dict[str, Any]] = []
     all_costed_rows: list[dict[str, Any]] = []
@@ -465,7 +379,7 @@ def main() -> int:
     for branch in selected_branches:
         branch_root = output_root / branch.label
         write_rows_csv(branch_root / 'cost_assumptions.csv', COST_ASSUMPTION_COLUMNS, cost_assumption_rows)
-        write_cost_model(branch_root / 'cost_model.md', reference_config, REALISTIC_COST_PROFILE_PATH, realistic_costs)
+        write_cost_model(branch_root / 'cost_model.md', reference_config)
         branch_raw_rows: list[dict[str, Any]] = []
         branch_costed_rows: list[dict[str, Any]] = []
         for risk in selected_risks:
@@ -477,7 +391,7 @@ def main() -> int:
             run_id = config.runtime.run_id
             print(f'[{branch.label}/{risk.label}] entry={config.universe.entry_frequency}, risk={config.portfolio.risk_per_trade_ratio:.3f}, cap={config.portfolio.max_total_armed_risk_ratio:.3f}')
             if args.force or not reports_exist(run_dir):
-                run_backtest(args.python_exe, config_path, run_id)
+                run_backtest(REPO_ROOT, args.python_exe, config_path, run_id)
             else:
                 print(f'  skipping existing raw reports at {run_dir.as_posix()}')
 
@@ -486,42 +400,38 @@ def main() -> int:
             all_raw_rows.append(raw_summary)
             write_rows_csv(run_dir / 'summary_raw.csv', RAW_SUMMARY_COLUMNS, [raw_summary])
 
-            costed_rows: list[dict[str, Any]] = []
-            trade_rows: list[dict[str, Any]] = []
-            portfolio_rows: list[dict[str, Any]] = []
-            symbol_rows: list[dict[str, Any]] = []
-            overlays = [
-                ('current_high_cost', apply_cost_overlay(trades, run_dir / 'portfolio_daily.csv', config, 'current_high_cost', current_high_cost=(reference_config.execution.backtest_commission_ratio, reference_config.execution.backtest_slippage_ratio))),
-                ('realistic_top10_v1', apply_cost_overlay(trades, run_dir / 'portfolio_daily.csv', config, 'realistic_top10_v1', profile_rows=realistic_costs)),
-            ]
-            for cost_profile, overlay in overlays:
-                summary_row = {
-                    'branch': branch.label,
-                    'risk_label': risk.label,
-                    'entry_frequency': config.universe.entry_frequency,
-                    'trend_frequency': config.universe.trend_frequency,
-                    'donchian_lookback': config.strategy.entry.donchian_lookback,
-                    'risk_per_trade_ratio': config.portfolio.risk_per_trade_ratio,
-                    'max_total_armed_risk_ratio': config.portfolio.max_total_armed_risk_ratio,
-                    **overlay.summary,
-                    'output_dir': run_dir.as_posix(),
-                }
-                passed, status = gate_status(branch, summary_row) if cost_profile == 'realistic_top10_v1' else (False, 'reference_only')
-                summary_row['gate_passed'] = int(passed)
-                summary_row['gate_status'] = status
-                summary_row['stability_status'] = stability_status(summary_row) if cost_profile == 'realistic_top10_v1' else 'reference_only'
-                costed_rows.append(summary_row)
-                branch_costed_rows.append(summary_row)
-                all_costed_rows.append(summary_row)
-                trade_rows.extend(overlay.trade_diagnostics)
-                portfolio_rows.extend(overlay.portfolio_daily)
-                symbol_rows.extend(overlay.symbol_cost_drag)
+            platform_report = build_platform_cost_report(trades, run_dir / 'portfolio_daily.csv', config, GM_BUILTIN_COST_PROFILE)
+            summary_row = {
+                'branch': branch.label,
+                'risk_label': risk.label,
+                'entry_frequency': config.universe.entry_frequency,
+                'trend_frequency': config.universe.trend_frequency,
+                'donchian_lookback': config.strategy.entry.donchian_lookback,
+                'risk_per_trade_ratio': config.portfolio.risk_per_trade_ratio,
+                'max_total_armed_risk_ratio': config.portfolio.max_total_armed_risk_ratio,
+                **platform_report.summary,
+                'gross_pnl': float(raw_summary.get('net_profit', 0.0) or 0.0),
+                'net_pnl': float(raw_summary.get('net_profit', 0.0) or 0.0),
+                'gross_return_ratio': float(raw_summary.get('return_ratio', 0.0) or 0.0),
+                'net_return_ratio': float(raw_summary.get('return_ratio', 0.0) or 0.0),
+                'max_drawdown': float(raw_summary.get('max_drawdown', 0.0) or 0.0),
+                'end_equity': float(raw_summary.get('end_equity', 0.0) or 0.0),
+                'portfolio_halt_count_costed': int(raw_summary.get('halt_days', 0) or 0),
+                'output_dir': run_dir.as_posix(),
+            }
+            passed, status = gate_status(branch, summary_row)
+            summary_row['gate_passed'] = int(passed)
+            summary_row['gate_status'] = status
+            summary_row['stability_status'] = stability_status(summary_row)
 
-            write_rows_csv(run_dir / 'summary_costed.csv', BRANCH_SUMMARY_COSTED_COLUMNS, costed_rows)
-            write_csv(run_dir / 'trade_diagnostics_costed.csv', COSTED_TRADE_DIAGNOSTIC_COLUMNS, trade_rows)
-            write_csv(run_dir / 'portfolio_daily_costed.csv', PORTFOLIO_DAILY_COSTED_COLUMNS, portfolio_rows)
-            write_csv(run_dir / 'symbol_cost_drag.csv', SYMBOL_COST_DRAG_COLUMNS, symbol_rows)
-            write_run_decision(run_dir / 'decision.md', branch, risk, costed_rows)
+            branch_costed_rows.append(summary_row)
+            all_costed_rows.append(summary_row)
+
+            write_rows_csv(run_dir / 'summary_costed.csv', BRANCH_SUMMARY_COSTED_COLUMNS, [summary_row])
+            write_csv(run_dir / 'trade_diagnostics_costed.csv', COSTED_TRADE_DIAGNOSTIC_COLUMNS, platform_report.trade_diagnostics)
+            write_csv(run_dir / 'portfolio_daily_costed.csv', PORTFOLIO_DAILY_COSTED_COLUMNS, platform_report.portfolio_daily)
+            write_csv(run_dir / 'symbol_cost_drag.csv', SYMBOL_COST_DRAG_COLUMNS, platform_report.symbol_cost_drag)
+            write_run_decision(run_dir / 'decision.md', branch, risk, [summary_row])
             if not args.keep_configs and config_path.exists():
                 config_path.unlink()
 
@@ -545,4 +455,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-

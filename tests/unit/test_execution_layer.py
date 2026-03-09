@@ -360,8 +360,7 @@ class ExecutionLayerTest(unittest.TestCase):
         engine._execute_due_signal(state, 'DCE.P', 'DCE.P2409', signal)
 
         expected_gross = (97.9 - 100.9) * 10.0
-        expected_turnover = (100.9 + 97.9) * 10.0
-        expected_net = expected_gross - expected_turnover * (config.execution.backtest_commission_ratio + config.execution.backtest_slippage_ratio)
+        expected_net = expected_gross
         self.assertIsNone(state.position)
         self.assertAlmostEqual(engine.runtime.portfolio.realized_pnl, expected_net)
         self.assertEqual(engine.runtime.portfolio.losses, 1)
@@ -465,6 +464,33 @@ class ExecutionLayerTest(unittest.TestCase):
             protected_stop_price=100.6,
             phase='protected',
             campaign_id='protected-open',
+            entry_eob=datetime(2026, 1, 5, 9, 0, 0),
+            breakout_anchor=100.0,
+            highest_price_since_entry=100.0,
+            lowest_price_since_entry=100.0,
+        )
+
+        with patch('yuruquant.core.engine.maybe_generate_entry', return_value=_build_demo_entry_signal('new-entry', last_eob)):
+            engine._process_symbol(state)
+
+        self.assertIsNotNone(state.pending_signal)
+        self.assertEqual('new-entry', state.pending_signal.campaign_id)
+
+    def test_cluster_risk_default_off_preserves_entry_behavior(self):
+        engine, _, state, last_eob = self._build_entry_engine()
+        engine.config.universe.risk_clusters = {'soy_complex': ('DCE.P', 'DCE.M')}
+
+        cluster_state = engine.runtime.states_by_csymbol['DCE.M']
+        cluster_state.position = ManagedPosition(
+            entry_price=100.0,
+            direction=1,
+            qty=100,
+            entry_atr=1.0,
+            initial_stop_loss=97.8,
+            stop_loss=97.8,
+            protected_stop_price=100.6,
+            phase='armed',
+            campaign_id='cluster-open',
             entry_eob=datetime(2026, 1, 5, 9, 0, 0),
             breakout_anchor=100.0,
             highest_price_since_entry=100.0,

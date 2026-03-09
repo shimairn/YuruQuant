@@ -40,8 +40,7 @@ def _build_signal(
         return None
     stop_distance = config.strategy.exit.hard_stop_atr * atr_value
     stop_loss = current_price - stop_distance if direction > 0 else current_price + stop_distance
-    cost_ratio = config.execution.backtest_commission_ratio + config.execution.backtest_slippage_ratio
-    compensation = max(spec.min_tick, current_price * max(cost_ratio, 0.0) * 2.0)
+    compensation = float(spec.min_tick)
     protected_stop = current_price + compensation if direction > 0 else current_price - compensation
     action = 'buy' if direction > 0 else 'sell'
     return EntrySignal(

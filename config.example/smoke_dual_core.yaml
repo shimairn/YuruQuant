@@ -30,10 +30,13 @@ universe:
 
 strategy:
   environment:
+    mode: ma_macd
     ma_period: 60
     macd_fast: 12
     macd_slow: 26
     macd_signal: 9
+    tsmom_lookbacks: [24, 48, 96]
+    tsmom_min_agree: 2
   entry:
     donchian_lookback: 36
     min_channel_width_atr: 0.5
@@ -43,7 +46,6 @@ strategy:
   exit:
     hard_stop_atr: 2.2
     protected_activate_r: 1.2
-    ascended_activate_r: 2.5
     armed_flush_buffer_bars: 0
     armed_flush_min_gap_minutes: 180
 

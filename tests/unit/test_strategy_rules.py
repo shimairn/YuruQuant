@@ -153,6 +153,21 @@ class StrategyRulesTest(unittest.TestCase):
         self.assertEqual(0, environment.direction)
         self.assertEqual(-9.0, environment.macd_histogram)
 
+    def test_tsmom_environment_detects_multi_horizon_trend(self):
+        environment = compute_environment(
+            build_trend_frame(direction=1),
+            60,
+            12,
+            26,
+            9,
+            mode='tsmom',
+            tsmom_lookbacks=(24, 72, 120),
+            tsmom_min_agree=2,
+        )
+        self.assertTrue(environment.trend_ok)
+        self.assertEqual(1, environment.direction)
+        self.assertGreater(environment.macd_histogram, 0.0)
+
     def test_breakout_requires_matching_environment(self):
         frame = build_breakout_frame(up=True)
         signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
@@ -161,6 +176,13 @@ class StrategyRulesTest(unittest.TestCase):
 
         blocked = maybe_generate_entry(self.config, self.portfolio, self.short_environment, 'DCE.P', frame, frame.latest_eob())
         self.assertIsNone(blocked)
+
+    def test_entry_protected_stop_uses_min_tick_only(self):
+        frame = build_breakout_frame(up=True)
+        signal = maybe_generate_entry(self.config, self.portfolio, self.long_environment, 'DCE.P', frame, frame.latest_eob())
+        self.assertIsNotNone(signal)
+        assert signal is not None
+        self.assertAlmostEqual(signal.price + self.spec.min_tick, signal.protected_stop_price, places=6)
 
     def test_channel_width_filter_blocks_narrow_setup(self):
         frame = build_breakout_frame(up=True)
