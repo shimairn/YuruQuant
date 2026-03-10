@@ -1,0 +1,29 @@
+instruments:
+  DCE.P:
+    platform_symbol: DCE.P
+    continuous_symbol: DCE.P
+    multiplier: 10
+    tick_size: 2
+    lot_size: 1
+    exchange: DCE
+  DCE.M:
+    platform_symbol: DCE.M
+    continuous_symbol: DCE.M
+    multiplier: 10
+    tick_size: 1
+    lot_size: 1
+    exchange: DCE
+  CZCE.MA:
+    platform_symbol: CZCE.MA
+    continuous_symbol: CZCE.MA
+    multiplier: 10
+    tick_size: 1
+    lot_size: 1
+    exchange: CZCE
+  SHFE.RB:
+    platform_symbol: SHFE.RB
+    continuous_symbol: SHFE.RB
+    multiplier: 10
+    tick_size: 1
+    lot_size: 1
+    exchange: SHFE

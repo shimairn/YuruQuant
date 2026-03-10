@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from typing import Protocol, Sequence, runtime_checkable
+
+from quantframe.core.models import Bar, Instrument, OrderRequest, OrderResult, PlatformMode, PortfolioSnapshot, Position
+
+
+@runtime_checkable
+class PlatformAdapter(Protocol):
+    name: str
+    mode: PlatformMode
+
+    def bind_context(self, context: object | None) -> None: ...
+
+    def initialize(self) -> None: ...
+
+    def subscribe(self, instruments: Sequence[Instrument], frequency: str, history_bars: int) -> None: ...
+
+    def fetch_history(self, instrument: Instrument, frequency: str, count: int) -> list[Bar]: ...
+
+    def normalize_bars(self, raw_bars: Sequence[object]) -> list[Bar]: ...
+
+    def get_portfolio_snapshot(self) -> PortfolioSnapshot: ...
+
+    def get_position(self, instrument: Instrument) -> Position: ...
+
+    def submit_orders(self, orders: Sequence[OrderRequest]) -> list[OrderResult]: ...
+
+    def run(self, callbacks: object) -> None: ...

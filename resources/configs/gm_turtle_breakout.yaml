@@ -1,0 +1,40 @@
+runtime:
+  mode: BACKTEST
+  run_id: gm_turtle_breakout
+
+platform:
+  name: gm
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    subscribe_wait_group: true
+    wait_group_timeout: 10
+    backtest:
+      start: "2026-01-01 09:00:00"
+      end: "2026-03-01 15:00:00"
+      initial_cash: 500000
+      commission_ratio: 0.0005
+      slippage_ratio: 0.0005
+
+resources:
+  universe: ../universes/cn_futures_core.yaml
+  instruments: ../instruments/gm_cn_futures.yaml
+
+strategy:
+  factory: strategies.trend.turtle_breakout:create_strategy
+  params:
+    decision_frequency: 1d
+    history_bars: 120
+    entry_window: 20
+    exit_window: 10
+    atr_window: 20
+    breakout_buffer_atr: 0.0
+    risk_per_trade_ratio: 0.01
+    atr_stop_multiple: 2.0
+    max_position_ratio: 0.20
+    max_abs_contracts: 4
+
+reporting:
+  enabled: true
+  output_dir: reports/gm_turtle_breakout

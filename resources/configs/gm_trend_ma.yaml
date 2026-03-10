@@ -1,0 +1,39 @@
+runtime:
+  mode: BACKTEST
+  run_id: gm_trend_skeleton
+
+platform:
+  name: gm
+  gm:
+    token: ""
+    strategy_id: ""
+    serv_addr: ""
+    subscribe_wait_group: true
+    wait_group_timeout: 10
+    backtest:
+      start: "2026-01-01 09:00:00"
+      end: "2026-03-01 15:00:00"
+      initial_cash: 500000
+      commission_ratio: 0.0005
+      slippage_ratio: 0.0005
+
+resources:
+  universe: ../universes/cn_futures_core.yaml
+  instruments: ../instruments/gm_cn_futures.yaml
+
+strategy:
+  factory: strategies.trend.ma_cross:create_strategy
+  params:
+    decision_frequency: 1d
+    history_bars: 90
+    fast_ma: 20
+    slow_ma: 60
+    min_signal_gap: 0.0025
+    vol_window: 20
+    risk_budget_ratio: 0.01
+    max_position_ratio: 0.20
+    max_abs_contracts: 5
+
+reporting:
+  enabled: true
+  output_dir: reports/framework_skeleton

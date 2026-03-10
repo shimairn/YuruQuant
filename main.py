@@ -1,5 +1,5 @@
-from yuruquant.app.runtime import main
+from quantframe.app.runtime import main
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())
